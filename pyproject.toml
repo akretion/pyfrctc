@@ -1,0 +1,32 @@
+[project]
+name = "pyfrctc"
+description = "Helpers for eInvoicing and eReporting in France"
+authors = [
+  { name="Alexis de Lattre", email="alexis.delattre@akretion.com" },
+]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Accounting",
+]
+dynamic = ["dependencies", "version"]
+
+[project.urls]
+Homepage = "https://github.com/akretion/pyfrctc"
+Source = "https://github.com/akretion/pyfrctc"
+Issues = "https://github.com/akretion/pyfrctc/issues"
+
+[build-system]
+requires = ["hatchling", "hatch-requirements-txt"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+[tool.hatch.version]
+path = "pyfrctc/__init__.py"

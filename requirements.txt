@@ -1,0 +1,2 @@
+requests_oauthlib
+python-stdnum >= 1.20
