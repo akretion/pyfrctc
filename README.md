@@ -4,7 +4,7 @@ This lib implements the [AFNOR XP Z12-013 standard](https://www.boutique.afnor.o
 
 This lib is currently under development. Consider it as alpha software: method names and arguments can change at any time. Breaking changes will slow down when we reach beta status and it will end when we reach production status.
 
-The AFNOR APIs are fully tested with [SuperPDP](https://www.superpdp.tech/), but the code should work with any other AFNOR-compliant accredited platform.
+The AFNOR APIs are fully tested with [SUPER PDP](https://www.superpdp.tech/), but the code should work with any other AFNOR-compliant accredited platform.
 
 ## Licence
 
@@ -16,4 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
-* version 0.1 dated 2026-04-22: initial release
+* version 0.1 dated 2026-04-22
+
+  *  initial release
+
+* version 0.2 dated 2026-04-23
+
+  * Fixes in re-formatting of directory lines for B2G when SIRET has specific global properties

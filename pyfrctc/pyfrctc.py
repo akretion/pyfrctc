@@ -113,7 +113,7 @@ def get_directory_siren(session, siren):
         raise ValueError("siren argument must be a string")
     siren = "".join(x for x in siren if not x.isspace())
     if not siren_is_valid(siren):
-        raise ValueError(f"SIREN '{siren}' is not valid.")
+        raise ValueError(f"SIREN {siren} is not valid.")
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/siren/code-insee:{siren}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
@@ -179,7 +179,7 @@ def get_directory_siret(session, siret):
         raise ValueError("siret argument must be a string")
     siret = "".join(x for x in siret if not x.isspace())
     if not siret_is_valid(siret):
-        raise ValueError(f"SIRET '{siret}' is not valid.")
+        raise ValueError(f"SIRET {siret} is not valid.")
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/siret/code-insee:{siret}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
@@ -242,15 +242,15 @@ def get_directory_lines(session, siren_or_siret):
     siren = siret = False
     if len(siren_or_siret) == 9:
         if not siren_is_valid(siren_or_siret):
-            raise ValueError(f"SIREN '{siren_or_siret}' is not valid.")
+            raise ValueError(f"SIREN {siren_or_siret} is not valid.")
         siren = siren_or_siret
     elif len(siren_or_siret) == 14:
         if not siret_is_valid(siren_or_siret):
-            raise ValueError("SIRET '{siren_or_siret}' is not valid.")
+            raise ValueError("SIRET {siren_or_siret} is not valid.")
         siret = siren_or_siret
         siren = siren_or_siret[:9]
     else:
-        raise ValueError("'{siren_or_siret}' is not a valid SIREN nor SIRET.")
+        raise ValueError("{siren_or_siret} is not a valid SIREN nor SIRET.")
 
     res = {}  # key = dir line identifier, value = dir line values
     query_json = {
@@ -362,20 +362,33 @@ def get_directory_lines_parsed(session, siren_or_siret, siret_parsed=None, filte
         dir_siret = vals.get('siret')
         if dir_siret:
             if len(dir_siret) != 14:
-                raise RuntimeError("SIRET in directory line '{identifier}' should have 14 caracters")
+                raise RuntimeError("SIRET in directory line {identifier} should have 14 caracters")
             if not siret_is_valid(dir_siret):
-                raise RuntimeError("SIRET '{dir_siret}' in directory line '{identifier}' is invalid")
+                raise RuntimeError("SIRET {dir_siret} in directory line {identifier} is invalid")
             if siret and siret != dir_siret:
                 raise RuntimeError("SIRET in directory line value must be the same as SIRET given as argument")
+        state_map = {
+            'Upcoming': 'upcoming',
+            'Enabled': 'active',
+            'Disabled': 'disabled',
+            }
+        dir_state = vals.get('directoryLineStatus')
+        if dir_state:
+            if dir_state not in state_map:
+                raise RuntimeError(f"Directory line {identifier} has directoryLineStatus '{dir_state}'. This value is not expected.")
+            state = state_map[dir_state]
+        else:
+            state = 'disabled'
+
         if "routingCode" in vals:
             type = "routing_code"
             routing_dict = vals['routingCode']
             if not isinstance(routing_dict, dict):
-                raise RuntimeError(f"routingCode must be a dict in directory line '{identifier}'")
+                raise RuntimeError(f"routingCode must be a dict in directory line {identifier}")
             if not dir_siret:
-                raise RuntimeError("SIRET is not provided in routing directory line '{identifier}'")
+                raise RuntimeError("SIRET is not provided in routing directory line {identifier}")
             if "addressingSuffix" in vals:
-                raise RuntimeError("Key 'addressingSuffix' should not be present in routing directory line '{identifier}'")
+                raise RuntimeError("Key 'addressingSuffix' should not be present in routing directory line {identifier}")
             routing_code = routing_dict.get("routingIdentifier")
             if not routing_code:
                 raise RuntimeError(f"Missing 'routingIdentifier' in directory line {identifier}")
@@ -390,12 +403,12 @@ def get_directory_lines_parsed(session, siren_or_siret, siret_parsed=None, filte
                 raise RuntimeError(f"routingCodeName must be a string in directory line {identifier}")
             routing_id_type = routing_dict.get("routingIdentifierType")
             if routing_id_type != "0224":
-                raise RuntimeError(f"routingIdentifierType has value {routing_id_type} in directory line '{identifier}' (expected value is '0224')")
+                raise RuntimeError(f"routingIdentifierType has value {routing_id_type} in directory line {identifier} (expected value is '0224')")
             commitment_required = routing_dict.get('managesLegalCommitmentCode', False)
             if not isinstance(commitment_required, bool):
-                raise RuntimeError(f"managesLegalCommitmentCode must be a boolean in directory line '{identifier}'")
+                raise RuntimeError(f"managesLegalCommitmentCode must be a boolean in directory line {identifier}")
             if siret_parsed.get('b2g_commitment_required') and not commitment_required:
-                logger.warning(f"This public entity has global property commitment_required, but the directory line '{identifier}' is not marked as commitment_required")
+                logger.warning(f"This public entity has global property commitment_required, but the directory line {identifier} is not marked as commitment_required")
                 commitment_required = True
             expected_identifier = f"{siren}_{siret}_{routing_code}"
 
@@ -409,31 +422,21 @@ def get_directory_lines_parsed(session, siren_or_siret, siret_parsed=None, filte
             expected_identifier = f"{siren}_{suffix}"
         elif dir_siret:
             type = "siret"
+            if siret_parsed.get('b2g_commitment_required'):
+                logger.info(f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_commitment_required")
+                commitment_required = True
+            elif siret_parsed.get('b2g_service_or_commitment_required'):
+                logger.info(f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_service_or_commitment_required")
+                commitment_required = True
+            if siret_parsed.get('b2g_service_required'):
+                logger.info(f"SIRET directory line {identifier} forced to disabled because the public entity has service required")
+                state = 'disabled'
             expected_identifier = f"{siren}_{siret}"
         else:
             type = "siren"
             expected_identifier = siren
         if expected_identifier != identifier:
-            raise RuntimeError(f"Directory line '{identifier}' type {type} was expected to be '{expected_identifier}'")
-        state_map = {
-            'Upcoming': 'upcoming',
-            'Enabled': 'active',
-            'Disabled': 'disabled',
-            }
-        dir_state = vals.get('directoryLineStatus')
-        if dir_state:
-            if dir_state not in state_map:
-                raise RuntimeError(f"Directory line '{identifier}' has directoryLineStatus '{dir_state}'. This value is not expected.")
-            state = state_map[dir_state]
-        else:
-            state = 'disabled'
-        if siret_parsed and type == 'siret':
-            if siret_parsed.get('b2g_service_or_commitment_required'):
-                logger.info(f"Setting commitment_required on directory line identifier '{identifier}' because the public entity has b2g_service_or_commitment_required")
-                commitment_required = True
-            if siret_parsed.get('b2g_service_required'):
-                logger.info(f"Setting directory line identifier '{identifier}' to disabled because the public entity has service required")
-                state = 'disabled'
+            raise RuntimeError(f"Directory line {identifier} type {type} was expected to be {expected_identifier}")
 
         new_vals = {
             'type': type,
