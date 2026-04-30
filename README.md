@@ -23,3 +23,8 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 * version 0.2 dated 2026-04-23
 
   * Fixes in re-formatting of directory lines for B2G when SIRET has specific global properties
+
+* version 0.3 dated 2026-04-30
+
+  * Add methods send\_flow\_parsed(), search\_flows\_parsed() and get\_flow\_metadata\_parsed()
+  * Add multi-page support in search\_flows()

@@ -9,6 +9,8 @@ from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
 import json
 import importlib
+import datetime
+import pytz
 from io import BytesIO
 
 VERSION = importlib.metadata.version("pyfrctc")
@@ -496,17 +498,22 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
         except Exception:
             pass
         raise RuntimeError(f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
-    flows_dict = post_res.json()
-    logger.debug(f"Answer JSON: {flows_dict}")
+    flow_dict = post_res.json()
+    logger.debug(f"Answer JSON: {flow_dict}")
     # We could check that the value received == value sent for processingRule and name
-    answer_flow_syntax = flows_dict.get('flowSyntax')
+    answer_flow_syntax = flow_dict.get('flowSyntax')
     if answer_flow_syntax and answer_flow_syntax != flow_syntax:
         raise RuntimeError(f"Query had flowSyntax={flow_syntax} but answer has flowSyntax={answer_flow_syntax}")
-    return flows_dict
+    return flow_dict
+
+
+def send_flow_parsed(session, file_bin, filename, flow_syntax, processing_rule):
+    flow_dict = send_flow(session, file_bin, filename, flow_syntax, processing_rule)
+    _parse_flow_dict(flow_dict)
+    return flow_dict
 
 
 def search_flows(session, updated_after, flow_direction, flow_type, updated_before=None):
-    # TODO implement multi-page
     # Pagination works with the updatedAfter property
     # The comparison with current date is strict : updatedAt > updatedAfter
     if not session:
@@ -551,6 +558,23 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
     if flow_direction:
         query_json["where"]["flowDirection"] = flow_direction
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-flow/{AFNOR_API_VERSION}/flows/search"
+    next_page = True
+    res = []
+    while next_page:
+        res_single_call = _post_search_flows(session, url, query_json)
+        res += res_single_call
+        if len(res_single_call) < LIMIT:
+            next_page = False
+        else:
+            updated_after_list = [flow['updatedAt'] for flow in res_single_call if flow.get('updatedAt')]
+            if not updated_after_list:
+                raise RuntimeError(f"Key 'updatedAt' is not present in the key 'results' of the answer of {url}. This should not happen.")
+            next_updated_after = max(updated_after_list)
+            query_json['where']['updatedAfter'] = next_updated_after
+    return res
+
+
+def _post_search_flows(session, url, query_json):
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     try:
         post_res = session.post(url, json=query_json, timeout=TIMEOUT)
@@ -568,7 +592,15 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
         raise RuntimeError(f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
     flows_dict = post_res.json()
     logger.debug(f'Answer JSON: {flows_dict}')
-    return flows_dict
+    res = flows_dict.get('results', [])
+    return res
+
+
+def search_flows_parsed(session, updated_after, flow_direction, flow_type, updated_before=None):
+    res = search_flows(session, updated_after, flow_direction, flow_type, updated_before=updated_before)
+    for flow_dict in res:
+        _parse_flow_dict(flow_dict)
+    return res
 
 
 def get_flow(session, flow_id, doc_type=None):
@@ -618,3 +650,50 @@ def get_flow(session, flow_id, doc_type=None):
     if not isinstance(file_bin, bytes):
         raise RuntimeError(f"File retrieved from {url} is not a python bytes object")
     return file_bin
+
+
+def get_flow_metadata_parsed(session, flow_id):
+    if not session:
+        raise ValueError("session argument has no value")
+    if not flow_id:
+        raise ValueError("flow_id argument has no value")
+    if not isinstance(flow_id, str):
+        raise ValueError("flow_id argument must be a string")
+    flow_dict = get_flow(session, flow_id, doc_type="Metadata")
+    _parse_flow_dict(flow_dict)
+    return flow_dict
+
+
+def _parse_flow_dict(flow_dict):
+    state_map = {
+        'Pending': 'pending',
+        'Ok': 'done',
+        'Error': 'error',
+        }
+    if flow_dict.get('submittedAt'):
+        flow_dict['submitted_at'] = _timestamp_iso8601_to_utc_datetime(flow_dict['submittedAt'])
+    if flow_dict.get('updatedAt'):
+        flow_dict['updated_at'] = _timestamp_iso8601_to_utc_datetime(flow_dict['updatedAt'])
+    if flow_dict.get('acknowledgement'):
+        if flow_dict['acknowledgement'].get('status'):
+            flow_dict['state'] = state_map.get(flow_dict['acknowledgement']['status'], 'ap_unknown')
+        if flow_dict['acknowledgement'].get('details') and isinstance(flow_dict['acknowledgement']['details'], list):
+            messages = []
+            for detail in flow_dict['acknowledgement']['details']:
+                # the 4 fields are required, so the IF condition should always be ok
+                if detail.get('item') and detail.get('level') and detail.get('reasonCode') and detail.get('reasonMessage'):
+                    msg = f"{detail['level']} on {detail['item']}: {detail['reasonMessage']} (code: {detail['reasonCode']})"
+                    messages.append(msg)
+            flow_dict['ap_error_details'] = '\n'.join(messages) or False
+
+
+def _timestamp_iso8601_to_utc_datetime(timestamp):
+    if not timestamp:
+        raise ValueError("timestamp argument has no value")
+    if not isinstance(timestamp, str):
+        raise ValueError("timestamp argument must be a string")
+    timestamp_dt = datetime.datetime.fromisoformat(timestamp)
+    # switch to UTC
+    timestamp_dt_utc = timestamp_dt.astimezone(pytz.utc)
+    timestamp_dt_utc_naive = timestamp_dt_utc.replace(tzinfo=None)
+    return timestamp_dt_utc_naive
