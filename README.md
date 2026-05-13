@@ -28,3 +28,7 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
   * Add methods send\_flow\_parsed(), search\_flows\_parsed() and get\_flow\_metadata\_parsed()
   * Add multi-page support in search\_flows()
+
+* version 0.4 dated 2026-05-14
+
+  * Add methods to generate and parse CDAR XML files for life cycle

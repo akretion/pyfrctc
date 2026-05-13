@@ -8,10 +8,20 @@ from oauthlib.oauth2 import BackendApplicationClient
 from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
 import json
-import importlib
+import importlib.metadata
 import datetime
 import pytz
 from io import BytesIO
+from lxml import etree, objectify
+import saxonche
+import importlib.resources as importlib_resources
+# from pprint import pprint
+
+try:
+    importlib_resources.files  # added in py3.9
+except AttributeError:
+    import importlib_resources  # py3.8 compat: pip install importlib-resources
+
 
 VERSION = importlib.metadata.version("pyfrctc")
 FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
@@ -28,6 +38,15 @@ PLATFORM2BASE_URL = {
 AFNOR_API_VERSION = 'v1'
 LIMIT = 100  # 100 is the max value for multi-page requests
 TIMEOUT = 30
+CDAR_XSD_FILE = "cdar-xsd/CrossDomainAcknowledgementAndResponse_100pD22B.xsd"
+CDAR_XSL_FILE = "cdar-schematron/20260430_BR-FR-CDV-Schematron-CDAR_V1.3.1.xsl"
+CDAR_NS_MAP = {
+    'qdt': "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
+    'udt': "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+    'ram': "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+    'rsm': "urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100",
+    'xsi': "http://www.w3.org/2001/XMLSchema-instance"
+    }
 
 
 def get_session(client_id, client_secret, platform="superpdp"):
@@ -537,7 +556,9 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
         flow_type_values = [
             'CustomerInvoice', 'SupplierInvoice',
             'StateInvoice',
-            'CustomerInvoiceLC', 'SupplierInvoiceLC']  # LC = Life Cycle
+            'CustomerInvoiceLC', 'SupplierInvoiceLC',
+            'StateCustomerInvoiceLC', 'StateSupplierInvoiceLC',
+            ]  # LC = Life Cycle
         if isinstance(flow_type, list):
             for flow_type_value in flow_type:
                 if flow_type_value not in flow_type_values:
@@ -575,7 +596,7 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
 
 
 def _post_search_flows(session, url, query_json):
-    logger.info(f"Sending POST request on {url} (v{VERSION})")
+    logger.info(f"Sending POST request on {url} with query={query_json} (v{VERSION})")
     try:
         post_res = session.post(url, json=query_json, timeout=TIMEOUT)
     except Exception as e:
@@ -662,6 +683,292 @@ def get_flow_metadata_parsed(session, flow_id):
     flow_dict = get_flow(session, flow_id, doc_type="Metadata")
     _parse_flow_dict(flow_dict)
     return flow_dict
+
+
+def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
+    """Generate CDAR XML file for life cycle"""
+    RSM = objectify.ElementMaker(namespace=CDAR_NS_MAP['rsm'], nsmap=CDAR_NS_MAP, annotate=False)
+    RAM = objectify.ElementMaker(namespace=CDAR_NS_MAP['ram'], annotate=False)
+    UDT = objectify.ElementMaker(namespace=CDAR_NS_MAP['udt'], annotate=False)
+    QDT = objectify.ElementMaker(namespace=CDAR_NS_MAP['qdt'], annotate=False)
+
+    root = RSM.CrossDomainAcknowledgementAndResponse(
+        RSM.ExchangedDocumentContext(
+            RAM.BusinessProcessSpecifiedDocumentContextParameter(
+                *[RAM.ID(data_dict['MDT-2']) for _ in [1] if "MDT-2" in data_dict]
+            ),
+            RAM.GuidelineSpecifiedDocumentContextParameter(
+                RAM.ID(data_dict['MDT-3'])
+            )
+        ),
+
+        RSM.ExchangedDocument(
+            RAM.ID(data_dict['MDT-4']),
+            *[RAM.Name(data_dict['MDT-5']) for _ in [1] if "MDT-5" in data_dict],
+            RAM.IssueDateTime(
+                UDT.DateTimeString(data_dict['MDT-8'], format="204")
+            ),
+            RAM.SenderTradeParty(
+                RAM.RoleCode(data_dict['MDT-21'])
+            ),
+            RAM.IssuerTradeParty(
+                RAM.GlobalID(data_dict['MDT-38'], schemeID="0002"),
+                RAM.Name(data_dict['MDT-39']),
+                RAM.RoleCode(data_dict['MDT-40'])
+            ),
+            RAM.RecipientTradeParty(
+                RAM.GlobalID(data_dict['MDT-57'], schemeID="0002"),
+                RAM.Name(data_dict['MDT-58']),
+                RAM.RoleCode(data_dict['MDT-59']),
+                RAM.URIUniversalCommunication(
+                    RAM.URIID(data_dict['MDT-73'], schemeID="0225")
+                )
+            )
+        ),
+
+        RSM.AcknowledgementDocument(
+            RAM.MultipleReferencesIndicator(
+                UDT.Indicator(str(data_dict['MDT-74']).lower())
+            ),
+            RAM.TypeCode(str(data_dict['MDT-77'])),
+            RAM.IssueDateTime(
+                UDT.DateTimeString(data_dict['MDT-78'], format="204")
+            ),
+            RAM.ReferenceReferencedDocument(
+                RAM.IssuerAssignedID(data_dict['MDT-87']),
+                *[RAM.StatusCode(data_dict['MDT-88']) for _ in [1] if "MDT-88" in data_dict],
+                RAM.TypeCode(data_dict['MDT-91']),
+                *[RAM.ReceiptDateTime(
+                    UDT.DateTimeString(data_dict['MDT-95'], format="204")
+                ) for _ in [1] if "MDT-95" in data_dict],
+                RAM.FormattedIssueDateTime(
+                    QDT.DateTimeString(data_dict['MDT-100'], format="102")
+                ),
+                RAM.ProcessConditionCode(data_dict['MDT-105']),
+                RAM.ProcessCondition(data_dict['MDT-106']),
+                RAM.IssuerTradeParty(
+                    RAM.GlobalID(data_dict['MDT-129'], schemeID="0002")
+                ),
+                *[RAM.SpecifiedDocumentStatus(
+                    *[RAM.ReasonCode(doc_status['MDT-113']) for _ in [1] if "MDT-113" in doc_status],
+                    *[RAM.Reason(doc_status['MDT-114'])
+                        for _ in [1] if "MDT-114" in doc_status],
+                    *[RAM.RequestedActionCode(doc_status['MDT-121']) for _ in [1] if 'MDT-121' in doc_status],
+                    *[RAM.RequestedAction(doc_status['MDT-122']) for _ in [1] if 'MDT-122' in doc_status],
+                    *[RAM.IncludedNote(
+                        RAM.Content(doc_status['MDT-126'])
+                        ) for _ in [1] if "MDT-126" in doc_status],
+                    *[RAM.SpecifiedDocumentCharacteristic(
+                        *[RAM.TypeCode(doc_characteristic['MDT-207']) for _ in [1] if "MDT-207" in doc_characteristic],
+                        *[RAM.ValueChangedIndicator(
+                            UDT.IndicatorString(str(doc_characteristic['MDT-209']).lower())) for _ in [1] if 'MDT-209' in doc_characteristic],
+                        *[RAM.ValueAmount(doc_characteristic['MDT-215']['float'], currencyID=doc_characteristic['MDT-215']['currency']) for _ in [1] if "MDT-215" in doc_characteristic],
+                        *[RAM.ValueDateTime(
+                            UDT.DateTimeString(doc_characteristic['MDT-219'], format="102")
+                            ) for _ in [1] if 'MDT-219' in doc_characteristic],
+                        ) for doc_characteristic in doc_status.get('doc_characteristics', [])],
+                    ) for doc_status in data_dict.get('doc_status', [])],
+
+            ),
+        )
+    )
+
+    xml_bytes = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+    # verif schema => faire comme lib fx
+    if check_xsd:
+        _cdar_check_xsd(xml_bytes)
+    if check_schematron:
+        _cdar_check_schematron(xml_bytes)
+    return xml_bytes
+
+
+def _cdar_check_xsd(xml_bytes):
+    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(CDAR_XSD_FILE)
+    logger.debug(f'Using CDAR XSD file {xsd_absolute_filepath}')
+    official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
+    try:
+        t = etree.parse(BytesIO(xml_bytes))
+        official_schema.assertValid(t)
+    except Exception as e:
+        # if the validation of the XSD fails, we arrive here
+        logger.error(
+            "The CDAR XML file is invalid against the XML Schema Definition")
+        logger.error(f'XSD Error: {str(e)}')
+        raise Exception(
+            "The CDAR XML file is not valid against the official "
+            "XML Schema Definition. "
+            "Here is the error, which may give you an idea on the "
+            f"cause of the problem: {str(e)}.")
+    logger.info('CDAR XML file successfully checked against XSD')
+
+
+def _cdar_check_schematron(xml_bytes):
+    # TODO add option to pass saxon_proc_and_style
+    start_chrono = datetime.datetime.now()
+    errors = []
+    xml_str = xml_bytes.decode('utf-8')
+    xml_str_no_bom = xml_str.lstrip('\ufeff')
+    xsl_file = str(importlib_resources.files(__package__).joinpath(CDAR_XSL_FILE))
+    with saxonche.PySaxonProcessor() as saxproc:
+        xslt_proc = saxproc.new_xslt30_processor()
+        xdm_node = saxproc.parse_xml(xml_text=xml_str_no_bom)
+        # compile_stylesheet() is the slow/heavy part
+        # So, if you pass the compiled stylesheet as argument, it saves a lot of time
+        # (about 300 ms on an intel laptop)
+        saxon_compiled_stylesheet = xslt_proc.compile_stylesheet(stylesheet_file=xsl_file)
+        result_str = saxon_compiled_stylesheet.transform_to_string(xdm_node=xdm_node)
+
+    try:
+        svrl_root = etree.fromstring(result_str.encode('utf-8'))
+    except Exception as e:
+        logger.error(f"Schematron check generated an invalid XML output. Error: {str(e)}")
+        logger.info('Unable to validate CDAR XML file against schematron')
+        return False
+    xpath_errors = svrl_root.xpath(
+        ".//svrl:successful-report | .//svrl:failed-assert", namespaces=svrl_root.nsmap)
+    error_nr = 1
+    for xpath_error in xpath_errors:
+        detail_xpath = xpath_error.xpath("*[local-name() = 'text']", namespaces=svrl_root.nsmap)
+        if detail_xpath:
+            error_msg = detail_xpath[0].text and detail_xpath[0].text.strip()
+            error_msg = f'{error_nr}. {error_msg}'
+            location = xpath_error.attrib and xpath_error.attrib.get('location')
+            if location:
+                error_msg = f'{error_msg}\nError location: {location}'
+            errors.append(error_msg)
+            error_nr += 1
+
+    if errors:
+        logger.error(
+            "The XML file is invalid against the schematron: %d errors found.", len(errors))
+        for error_msg in errors:
+            logger.error(error_msg)
+        error_list_str = '\n'.join(errors)
+        full_error = (
+            f"The Factur-X XML file is not valid against the official "
+            f"schematron. {len(errors)} errors found:\n{error_list_str}")
+        raise Exception(full_error)
+    end_chrono = datetime.datetime.now()
+    logger.info(
+        'CDAR XML file successfully validated against schematron in %s sec',
+        (end_chrono - start_chrono).total_seconds())
+
+
+def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
+    if not xml_bytes:
+        raise ValueError("xml_bytes argument has no value")
+    if isinstance(xml_bytes, str):
+        xml_bytes = xml_bytes.encode('utf-8')
+    if not isinstance(xml_bytes, bytes):
+        raise ValueError(f"xml_bytes argument is a {type(xml_bytes)}, it must be a bytes")
+    try:
+        xml_root = etree.fromstring(xml_bytes)
+    except Exception as e:
+        raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}")
+    if check_xsd:
+        _cdar_check_xsd(xml_bytes)
+    if check_schematron:
+        _cdar_check_schematron(xml_bytes)
+    exch_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:ExchangedDocument"
+    ack_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:AcknowledgementDocument"
+    ref_doc_xp = f"{ack_doc_xp}/ram:ReferenceReferencedDocument"
+    doc_status_xp = f"{ref_doc_xp}/ram:SpecifiedDocumentStatus"
+    doc_characteristics_rel_xp = "ram:SpecifiedDocumentCharacteristic"
+    xpath_dict = {
+        'MDT-87': f"{ref_doc_xp}/ram:IssuerAssignedID",
+        "MDT-105": f"{ref_doc_xp}/ram:ProcessConditionCode",
+        "MDT-106": f"{ref_doc_xp}/ram:ProcessCondition",
+        "MDT-8": f"{exch_doc_xp}/ram:IssueDateTime/udt:DateTimeString",
+        }
+    doc_status_xpath_dict = {
+        "MDT-113": "ram:ReasonCode",
+        "MDT-114": "ram:Reason",
+        "MDT-121": "ram:RequestedActionCode",
+        "MDT-122": "ram:RequestedAction",
+        "MDT-126": "ram:IncludedNote/ram:Content",
+        }
+    doc_characteristics_xpath_dict = {
+        "MDT-207": "ram:TypeCode",
+        "MDT-209": "ram:ValueChangedIndicator/udt:IndicatorString",
+        "MDT-215": "ram:ValueAmount",
+        "MDT-219": "ram:ValueDateTime/udt:DateTimeString",
+        }
+
+    res = {'doc_status': []}
+    namespaces = xml_root.nsmap
+    if None in namespaces:
+        namespaces.pop(None)
+    namespaces = CDAR_NS_MAP
+    for key, xpath in xpath_dict.items():
+        value = _xpath_get_value(xpath, xml_root, namespaces)
+        if value is not None:
+            res[key] = value
+    doc_status_line = 0
+    for doc_status in xml_root.xpath(doc_status_xp, namespaces=namespaces):
+        doc_status_line += 1
+        doc_status_dict = {"doc_characteristics": []}
+        for key, xpath in doc_status_xpath_dict.items():
+            value = _xpath_get_value(xpath, doc_status, namespaces)
+            if value is not None:
+                doc_status_dict[key] = value
+        for doc_characteristic in doc_status.xpath(doc_characteristics_rel_xp, namespaces=namespaces):
+            doc_characteristic_dict = {}
+            for key, xpath in doc_characteristics_xpath_dict.items():
+                value = _xpath_get_value(xpath, doc_characteristic, namespaces)
+                if value is not None:
+                    doc_characteristic_dict[key] = value
+            doc_status_dict["doc_characteristics"].append(doc_characteristic_dict)
+        res['doc_status'].append(doc_status_dict)
+    return res
+
+
+def _xpath_get_value(xpath, node, namespaces):
+    date_fmt = {
+        "102": '%Y%m%d',
+        "204": '%Y%m%d%H%M%S',
+        }
+    xpath_res = node.xpath(xpath, namespaces=namespaces)
+    value = None
+    if xpath_res and xpath_res[0].text:
+        value = xpath_res[0].text and xpath_res[0].text.strip()
+        if value and xpath.endswith(':DateTimeString') and xpath_res[0].attrib and xpath_res[0].attrib.get("format") in date_fmt:
+            value = datetime.datetime.strptime(value, date_fmt[xpath_res[0].attrib["format"]])
+        if value and xpath_res[0].attrib and xpath_res[0].attrib.get("currencyID"):
+            value = {'float': float(value), 'currency': xpath_res[0].attrib['currencyID']}
+    return value
+
+
+def _map_nested_keys(data, key_map):
+    """Recursively updates keys in a dictionary based on a mapping dictionary"""
+    if isinstance(data, dict):
+        return {
+            key_map.get(k, k): _map_nested_keys(v, key_map)
+            for k, v in data.items()
+        }
+    elif isinstance(data, list):
+        return [_map_nested_keys(item, key_map) for item in data]
+    else:
+        return data
+
+
+def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
+    raw_res = parse_cdar_raw(xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron)
+    key_map = {
+        'MDT-87': "invoice_number",
+        "MDT-105": "status_code",
+        "MDT-106": "status_name",
+        "MDT-8": "lc_datetime",
+        "MDT-113": "reason_code",
+        "MDT-114": "reason_txt",
+        "MDT-121": "action_code",
+        "MDT-122": "action_txt",
+        "MDT-126": "comment",
+        "MDT-207": "type_code",
+        "MDT-215": "amount",
+        "MDT-219": "date",
+        }
+    res = _map_nested_keys(raw_res, key_map)
+    return res
 
 
 def _parse_flow_dict(flow_dict):
