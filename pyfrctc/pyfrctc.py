@@ -11,6 +11,7 @@ import json
 import importlib.metadata
 import datetime
 import pytz
+import base64
 from io import BytesIO
 from lxml import etree, objectify
 import saxonche
@@ -741,6 +742,7 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
                 *[RAM.ReceiptDateTime(
                     UDT.DateTimeString(data_dict['MDT-95'], format="204")
                 ) for _ in [1] if "MDT-95" in data_dict],
+                *[RAM.AttachmentBinaryObject(base64.encodebytes(attach['bin']), filename=attach['filename'], mimeCode=attach['mime_type']) for attach in data_dict.get('MDT-96', [])],
                 RAM.FormattedIssueDateTime(
                     QDT.DateTimeString(data_dict['MDT-100'], format="102")
                 ),
@@ -766,8 +768,8 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
                         *[RAM.ValueDateTime(
                             UDT.DateTimeString(doc_characteristic['MDT-219'], format="102")
                             ) for _ in [1] if 'MDT-219' in doc_characteristic],
-                        ) for doc_characteristic in doc_status.get('doc_characteristics', [])],
-                    ) for doc_status in data_dict.get('doc_status', [])],
+                        ) for doc_characteristic in doc_status.get('MDG-43', [])],
+                    ) for doc_status in data_dict.get('MDG-37', [])],
 
             ),
         )
@@ -874,6 +876,7 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     ref_doc_xp = f"{ack_doc_xp}/ram:ReferenceReferencedDocument"
     doc_status_xp = f"{ref_doc_xp}/ram:SpecifiedDocumentStatus"
     doc_characteristics_rel_xp = "ram:SpecifiedDocumentCharacteristic"
+    attach_xp = f"{ref_doc_xp}/ram:AttachmentBinaryObject"
     xpath_dict = {
         'MDT-87': f"{ref_doc_xp}/ram:IssuerAssignedID",
         "MDT-105": f"{ref_doc_xp}/ram:ProcessConditionCode",
@@ -894,7 +897,7 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
         "MDT-219": "ram:ValueDateTime/udt:DateTimeString",
         }
 
-    res = {'doc_status': []}
+    res = {'MDG-37': [], "MDT-96": []}
     namespaces = xml_root.nsmap
     if None in namespaces:
         namespaces.pop(None)
@@ -906,7 +909,7 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     doc_status_line = 0
     for doc_status in xml_root.xpath(doc_status_xp, namespaces=namespaces):
         doc_status_line += 1
-        doc_status_dict = {"doc_characteristics": []}
+        doc_status_dict = {"MDG-43": []}
         for key, xpath in doc_status_xpath_dict.items():
             value = _xpath_get_value(xpath, doc_status, namespaces)
             if value is not None:
@@ -917,8 +920,21 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
                 value = _xpath_get_value(xpath, doc_characteristic, namespaces)
                 if value is not None:
                     doc_characteristic_dict[key] = value
-            doc_status_dict["doc_characteristics"].append(doc_characteristic_dict)
-        res['doc_status'].append(doc_status_dict)
+            doc_status_dict["MDG-43"].append(doc_characteristic_dict)
+        res['MDG-37'].append(doc_status_dict)
+    for attach in xml_root.xpath(attach_xp, namespaces=namespaces):
+        if attach.text:
+            if attach.attrib and attach.attrib.get('filename'):
+                filename = attach.attrib['filename']
+            else:
+                filename = "unknwon_filename.bin"
+            avals = {
+                'bin': base64.b64decode(attach.text),
+                'filename': filename,
+                }
+            if attach.attrib and attach.attrib.get('mimeCode'):
+                avals['mime_type'] = attach.attrib['mimeCode']
+            res['MDT-96'].append(avals)
     return res
 
 
@@ -955,6 +971,7 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
     raw_res = parse_cdar_raw(xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron)
     key_map = {
         'MDT-87': "invoice_number",
+        'MDT-96': "attachments",
         "MDT-105": "status_code",
         "MDT-106": "status_name",
         "MDT-8": "lc_datetime",
@@ -966,6 +983,8 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
         "MDT-207": "type_code",
         "MDT-215": "amount",
         "MDT-219": "date",
+        "MDG-37": "doc_status",
+        "MDG-43": "doc_characteristics",
         }
     res = _map_nested_keys(raw_res, key_map)
     return res

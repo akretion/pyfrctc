@@ -32,3 +32,8 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 * version 0.4 dated 2026-05-14
 
   * Add methods to generate and parse CDAR XML files for life cycle
+
+* version 0.5 dated 2026-05-15
+
+  * Add support for MDT-96 in CDAR XML for generation and parsing
+  * rename keys doc\_status and doc\_characteristics to their designation in the standard (MDG-37 and MDG-43)
