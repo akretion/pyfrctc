@@ -3,8 +3,8 @@
 # Licence LGPL-2.1 or later (https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
 
 import logging
-from requests_oauthlib import OAuth2Session
-from oauthlib.oauth2 import BackendApplicationClient
+# from requests_oauthlib import OAuth2Session
+# from oauthlib.oauth2 import BackendApplicationClient
 from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
 import json
@@ -48,41 +48,6 @@ CDAR_NS_MAP = {
     'rsm': "urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100",
     'xsi': "http://www.w3.org/2001/XMLSchema-instance"
     }
-
-
-def get_session(client_id, client_secret, platform="superpdp"):
-    if platform not in PLATFORM2TOKEN_URL:
-        raise ValueError(f"Platform {platform} is not supported yet.")
-    if not client_id:
-        raise ValueError("Missing value for client_id argument")
-    if not isinstance(client_id, str):
-        raise ValueError("Argument client_id must be a string")
-    if not client_secret:
-        raise ValueError("Missing value for client_secret argument")
-    if not isinstance(client_secret, str):
-        raise ValueError("Argument client_secret must be a string")
-    logger.debug(f'get_session called for platform {platform}')
-    token_url = PLATFORM2TOKEN_URL[platform]
-
-    def save_token(token):
-        logger.info('New token saved')
-
-    logger.info(f'Connecting on {token_url} (v{VERSION})')
-    client = BackendApplicationClient(client_id=client_id)
-    oauth = OAuth2Session(client=client)
-    try:
-        token = oauth.fetch_token(
-            token_url=token_url, client_id=client_id, client_secret=client_secret, timeout=TIMEOUT)
-    except Exception as e:
-        raise ConnectionError(f"Query on {token_url} failed. Error: {str(e)}")
-    extra = {"client_id": client_id, "client_secret": client_secret}
-    session = OAuth2Session(
-        client_id,
-        token=token,
-        auto_refresh_url=token_url,
-        auto_refresh_kwargs=extra,
-        token_updater=save_token)
-    return session
 
 
 def _get_plateform(session):
@@ -619,6 +584,10 @@ def _post_search_flows(session, url, query_json):
 
 
 def search_flows_parsed(session, updated_after, flow_direction, flow_type, updated_before=None):
+    if isinstance(flow_direction, str):
+        flow_direction = flow_direction.capitalize()
+    elif isinstance(flow_direction, list):
+        flow_direction = [x.capitalize() for x in flow_direction]
     res = search_flows(session, updated_after, flow_direction, flow_type, updated_before=updated_before)
     for flow_dict in res:
         _parse_flow_dict(flow_dict)
@@ -991,10 +960,14 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
 
 
 def _parse_flow_dict(flow_dict):
-    state_map = {
+    state_map = {  # key = AFNOR vals ; values = our keys
         'Pending': 'pending',
         'Ok': 'done',
         'Error': 'error',
+        }
+    direction_map = {
+        'In': 'in',
+        'Out': 'out',
         }
     if flow_dict.get('submittedAt'):
         flow_dict['submitted_at'] = _timestamp_iso8601_to_utc_datetime(flow_dict['submittedAt'])
@@ -1011,6 +984,8 @@ def _parse_flow_dict(flow_dict):
                     msg = f"{detail['level']} on {detail['item']}: {detail['reasonMessage']} (code: {detail['reasonCode']})"
                     messages.append(msg)
             flow_dict['ap_error_details'] = '\n'.join(messages) or False
+    if flow_dict.get('flowDirection'):
+        flow_dict['flow_direction'] = direction_map.get(flow_dict['flowDirection'], flow_dict['flowDirection'])
 
 
 def _timestamp_iso8601_to_utc_datetime(timestamp):
