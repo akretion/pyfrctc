@@ -5,7 +5,7 @@
 import base64
 import datetime
 import importlib.metadata
-import importlib.resources as importlib_resources
+import importlib.resources
 import json
 import logging
 from io import BytesIO
@@ -20,12 +20,6 @@ from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
 
 # from pprint import pprint
-
-try:
-    importlib_resources.files  # added in py3.9
-except AttributeError:
-    import importlib_resources  # py3.8 compat: pip install importlib-resources
-
 
 VERSION = importlib.metadata.version("pyfrctc")
 FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
@@ -47,8 +41,10 @@ CDAR_XSL_FILE = "cdar-schematron/20260430_BR-FR-CDV-Schematron-CDAR_V1.3.1.xsl"
 CDAR_NS_MAP = {
     "qdt": "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
     "udt": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
-    "ram": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
-    "rsm": "urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100",
+    "ram": "urn:un:unece:uncefact:data:standard:"
+    "ReusableAggregateBusinessInformationEntity:100",
+    "rsm": "urn:un:unece:uncefact:data:standard:"
+    "CrossDomainAcknowledgementAndResponse:100",
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
 
@@ -80,7 +76,9 @@ def healthcheck(session, raise_if_error=True, type="directory"):
     except Exception as e:
         logger.warning(f"GET request on {url} failed. Error: {str(e)}")
         if raise_if_error:
-            raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}")
+            raise ConnectionError(
+                f"GET request on {url} failed. Error: {str(e)}"
+            ) from e
         return False
     status_code = get_res.status_code
     if status_code == 200:
@@ -108,12 +106,15 @@ def get_directory_siren(session, siren):
     siren = "".join(x for x in siren if not x.isspace())
     if not siren_is_valid(siren):
         raise ValueError(f"SIREN {siren} is not valid.")
-    url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/siren/code-insee:{siren}"
+    url = (
+        f"{PLATFORM2BASE_URL[platform]}/afnor-directory/"
+        f"{AFNOR_API_VERSION}/siren/code-insee:{siren}"
+    )
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}") from e
     status_code = get_res.status_code
     if status_code == 404:  # SIREN not in directory
         return False
@@ -123,7 +124,9 @@ def get_directory_siren(session, siren):
         answer_siren = siren_dict.get("siren")
         if answer_siren != siren:
             raise RuntimeError(
-                f"Answer of GET request on {url} is inconsistent: SIREN in answer ({answer_siren}) is different from query SIREN ({siren}). This should never happen."
+                f"Answer of GET request on {url} is inconsistent: "
+                f"SIREN in answer ({answer_siren}) is different from "
+                f"query SIREN ({siren}). This should never happen."
             )
         return siren_dict
     else:
@@ -135,7 +138,8 @@ def get_directory_siren(session, siren):
         except Exception:
             pass
         raise RuntimeError(
-            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+            f"GET request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}"
         )
 
 
@@ -178,12 +182,15 @@ def get_directory_siret(session, siret):
     siret = "".join(x for x in siret if not x.isspace())
     if not siret_is_valid(siret):
         raise ValueError(f"SIRET {siret} is not valid.")
-    url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/siret/code-insee:{siret}"
+    url = (
+        f"{PLATFORM2BASE_URL[platform]}/afnor-directory/"
+        f"{AFNOR_API_VERSION}/siret/code-insee:{siret}"
+    )
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}") from e
     status_code = get_res.status_code
     if status_code != 200:
         error_code = error_msg = None
@@ -194,14 +201,17 @@ def get_directory_siret(session, siret):
         except Exception:
             pass
         raise RuntimeError(
-            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}."
+            f"GET request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}."
         )
     siret_dict = get_res.json()
     logger.debug(f"Answer JSON: {siret_dict}")
     answer_siret = siret_dict.get("siret")
     if answer_siret != siret:
         raise RuntimeError(
-            f"Answer of GET request on {url} is inconsistent: SIRET in answer ({answer_siret}) is different from query SIRET ({siret}). This should never happen."
+            f"Answer of GET request on {url} is inconsistent: "
+            f"SIRET in answer ({answer_siret}) is different from "
+            f"query SIRET ({siret}). This should never happen."
         )
     return siret_dict
 
@@ -280,13 +290,16 @@ def get_directory_lines(session, siren_or_siret):
     }
     if siret:
         query_json["filters"]["siret"] = {"op": "strict", "value": siret}
-    url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/directory-line/search"
+    url = (
+        f"{PLATFORM2BASE_URL[platform]}/afnor-directory/"
+        f"{AFNOR_API_VERSION}/directory-line/search"
+    )
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     logger.debug(f"Json in query: {query_json}")
     try:
         post_res = session.post(url, json=query_json, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}") from e
     status_code = post_res.status_code
     if status_code not in (200, 204, 206):
         error_code = error_msg = None
@@ -297,16 +310,21 @@ def get_directory_lines(session, siren_or_siret):
         except Exception:
             pass
         raise RuntimeError(
-            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}."
+            f"POST request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}."
         )
     elif status_code == 204:
         logger.warning(
-            "POST request on {url} returned HTTP code 204, which means there is no directory lines."
+            "POST request on {url} returned HTTP code 204, "
+            "which means there is no directory lines."
         )
         return res
     elif status_code == 206:
         raise RuntimeError(
-            f"POST request on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100)."
+            f"POST request on {url} returned HTTP code 206. "
+            f"It should never happen because we set the limit to {LIMIT}, "
+            f"which is <= to the minimum value that must be supported by "
+            "all platforms (100)."
         )
     list_dir_dict = post_res.json()
     logger.debug(f"Answer JSON: {list_dir_dict}")
@@ -331,23 +349,29 @@ def get_directory_lines(session, siren_or_siret):
             except Exception as e:
                 logger.warning(f"POST request on {url} failed. Error: {str(e)}")
                 raise ConnectionError(
-                    f"POST request number {req_count} on {url} failed. Error: {str(e)}"
-                )
+                    f"POST request number {req_count} on {url} failed. "
+                    f"Error: {str(e)}"
+                ) from e
             status_code = post_res.status_code
             if status_code not in (200, 204, 206):
                 raise ConnectionError(
-                    f"POST request number {req_count} on {url} returned error code {status_code}."
+                    f"POST request number {req_count} on {url} "
+                    f"returned error code {status_code}."
                 )
 
             elif status_code == 204:
                 # this should not happen in a second+ iteration
                 raise Exception(
-                    "POST request number {req_count} on {url} returned HTTP code 204. It should not happen on a 'next page' iteration."
+                    f"POST request number {req_count} on {url} returned "
+                    "HTTP code 204. It should not happen on a 'next page' iteration."
                 )
 
             elif status_code == 206:
                 raise Exception(
-                    "POST request number {req_count}  on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100)."
+                    f"POST request number {req_count} on {url} returned "
+                    "HTTP code 206. It should never happen because we set "
+                    f"the limit to {LIMIT}, which is <= to the minimum value "
+                    "that must be supported by all platforms (100)."
                 )
             list_dir_dict = post_res.json()
             logger.debug(f"Answer JSON: {list_dir_dict}")
@@ -362,7 +386,10 @@ def get_directory_lines(session, siren_or_siret):
                 cur_result_total = list_dir_dict["totalNumberOfResults"]
                 if cur_result_total != result_total:
                     raise Exception(
-                        "Answer to request number {req_count} on {url} returned a totalNumberOfResults of {cur_result_total} which is different from the value of the first request ({result_total}). This should never happen."
+                        f"Answer to request number {req_count} on {url} "
+                        f"returned a totalNumberOfResults of {cur_result_total} "
+                        f"which is different from the value of the first "
+                        f"request ({result_total}). This should never happen."
                     )
             else:
                 raise Exception(
@@ -372,7 +399,9 @@ def get_directory_lines(session, siren_or_siret):
             req_count += 1
     if len(res) != result_total:
         raise Exception(
-            f"The number of directory lines ({len(res)}) is different from the total number of results announced by the API ({result_total}). This should never happen."
+            f"The number of directory lines ({len(res)}) is different "
+            f"from the total number of results announced by the API "
+            f"({result_total}). This should never happen."
         )
     logger.info(f"Returning {len(res)} directory lines")
     return res
@@ -398,7 +427,9 @@ def get_directory_lines_parsed(
             )
         if siret_parsed.get("siret") != siret:
             raise RuntimeError(
-                f"'siret' in siret_parsed (siret_parsed.get('siret')) should be identical to siret given in siren_or_siret arg ({siren_or_siret})"
+                f"'siret' in siret_parsed (siret_parsed.get('siret')) "
+                f"should be identical to siret given in siren_or_siret "
+                f"arg ({siren_or_siret})"
             )
 
     res = {}
@@ -410,7 +441,8 @@ def get_directory_lines_parsed(
             raise RuntimeError("A siren key should be present")
         if siren != dir_siren:
             raise RuntimeError(
-                "SIREN in directory line value must be the same as SIREN given as argument"
+                "SIREN in directory line value must be the same as "
+                "SIREN given as argument"
             )
         dir_siret = vals.get("siret")
         if dir_siret:
@@ -420,11 +452,12 @@ def get_directory_lines_parsed(
                 )
             if not siret_is_valid(dir_siret):
                 raise RuntimeError(
-                    "SIRET {dir_siret} in directory line {identifier} is invalid"
+                    f"SIRET {dir_siret} in directory line {identifier} is invalid"
                 )
             if siret and siret != dir_siret:
                 raise RuntimeError(
-                    "SIRET in directory line value must be the same as SIRET given as argument"
+                    "SIRET in directory line value must be the same as "
+                    "SIRET given as argument"
                 )
         state_map = {
             "Upcoming": "upcoming",
@@ -435,7 +468,8 @@ def get_directory_lines_parsed(
         if dir_state:
             if dir_state not in state_map:
                 raise RuntimeError(
-                    f"Directory line {identifier} has directoryLineStatus '{dir_state}'. This value is not expected."
+                    f"Directory line {identifier} has directoryLineStatus "
+                    f"'{dir_state}'. This value is not expected."
                 )
             state = state_map[dir_state]
         else:
@@ -450,11 +484,12 @@ def get_directory_lines_parsed(
                 )
             if not dir_siret:
                 raise RuntimeError(
-                    "SIRET is not provided in routing directory line {identifier}"
+                    f"SIRET is not provided in routing directory line {identifier}"
                 )
             if "addressingSuffix" in vals:
                 raise RuntimeError(
-                    "Key 'addressingSuffix' should not be present in routing directory line {identifier}"
+                    "Key 'addressingSuffix' should not be present in routing "
+                    f"directory line {identifier}"
                 )
             routing_code = routing_dict.get("routingIdentifier")
             if not routing_code:
@@ -474,21 +509,26 @@ def get_directory_lines_parsed(
                 )
             if not isinstance(routing_code_name, str):
                 raise RuntimeError(
-                    f"routingCodeName must be a string in directory line {identifier}"
+                    f"routingCodeName must be a string in directory line "
+                    f"{identifier}"
                 )
             routing_id_type = routing_dict.get("routingIdentifierType")
             if routing_id_type != "0224":
                 raise RuntimeError(
-                    f"routingIdentifierType has value {routing_id_type} in directory line {identifier} (expected value is '0224')"
+                    f"routingIdentifierType has value {routing_id_type} "
+                    f"in directory line {identifier} (expected value is '0224')"
                 )
             commitment_required = routing_dict.get("managesLegalCommitmentCode", False)
             if not isinstance(commitment_required, bool):
                 raise RuntimeError(
-                    f"managesLegalCommitmentCode must be a boolean in directory line {identifier}"
+                    f"managesLegalCommitmentCode must be a boolean in "
+                    f"directory line {identifier}"
                 )
             if siret_parsed.get("b2g_commitment_required") and not commitment_required:
                 logger.warning(
-                    f"This public entity has global property commitment_required, but the directory line {identifier} is not marked as commitment_required"
+                    f"This public entity has global property commitment_required, "
+                    f"but the directory line {identifier} is not marked as "
+                    "commitment_required"
                 )
                 commitment_required = True
             expected_identifier = f"{siren}_{siret}_{routing_code}"
@@ -507,17 +547,22 @@ def get_directory_lines_parsed(
             type = "siret"
             if siret_parsed.get("b2g_commitment_required"):
                 logger.info(
-                    f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_commitment_required"
+                    f"SIRET directory line {identifier} forced to "
+                    "commitment_required because the public entity has "
+                    "b2g_commitment_required"
                 )
                 commitment_required = True
             elif siret_parsed.get("b2g_service_or_commitment_required"):
                 logger.info(
-                    f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_service_or_commitment_required"
+                    f"SIRET directory line {identifier} forced to "
+                    "commitment_required because the public entity has "
+                    "b2g_service_or_commitment_required"
                 )
                 commitment_required = True
             if siret_parsed.get("b2g_service_required"):
                 logger.info(
-                    f"SIRET directory line {identifier} forced to disabled because the public entity has service required"
+                    f"SIRET directory line {identifier} forced to disabled "
+                    "because the public entity has service required"
                 )
                 state = "disabled"
             expected_identifier = f"{siren}_{siret}"
@@ -526,7 +571,8 @@ def get_directory_lines_parsed(
             expected_identifier = siren
         if expected_identifier != identifier:
             raise RuntimeError(
-                f"Directory line {identifier} type {type} was expected to be {expected_identifier}"
+                f"Directory line {identifier} type {type} was expected to be "
+                f"{expected_identifier}"
             )
 
         new_vals = {
@@ -583,7 +629,8 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
                 {
                     "flowSyntax": flow_syntax,
                     "name": filename,
-                    # 'processingRule': processing_rule,  # not yet supported by SuperPDP
+                    # not yet supported by superPDP
+                    # 'processingRule': processing_rule,
                 }
             ),
             "text/plain",
@@ -594,7 +641,7 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
     try:
         post_res = session.post(url, files=payload, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}") from e
     status_code = post_res.status_code
     if status_code != 202:
         error_code = error_msg = None
@@ -605,7 +652,8 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
         except Exception:
             pass
         raise RuntimeError(
-            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+            f"POST request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}"
         )
     flow_dict = post_res.json()
     logger.debug(f"Answer JSON: {flow_dict}")
@@ -613,7 +661,8 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
     answer_flow_syntax = flow_dict.get("flowSyntax")
     if answer_flow_syntax and answer_flow_syntax != flow_syntax:
         raise RuntimeError(
-            f"Query had flowSyntax={flow_syntax} but answer has flowSyntax={answer_flow_syntax}"
+            f"Query had flowSyntax={flow_syntax} but answer has "
+            f"flowSyntax={answer_flow_syntax}"
         )
     return flow_dict
 
@@ -642,7 +691,9 @@ def search_flows(
             for flow_dir_value in flow_direction:
                 if flow_dir_value not in flow_direction_values:
                     raise ValueError(
-                        f"Value {flow_dir_value} is not allowed for the argument flow_direction. Allowed values: {flow_direction_values}"
+                        f"Value {flow_dir_value} is not allowed for the "
+                        f"argument flow_direction. Allowed values: "
+                        f"{flow_direction_values}"
                     )
         else:
             raise ValueError(
@@ -664,7 +715,9 @@ def search_flows(
             for flow_type_value in flow_type:
                 if flow_type_value not in flow_type_values:
                     raise ValueError(
-                        f"Value {flow_type_value} is not allowed for the argument flow_type. Allowed values: {flow_type_values}"
+                        f"Value {flow_type_value} is not allowed for the "
+                        f"argument flow_type. Allowed values: "
+                        f"{flow_type_values}"
                     )
         else:
             raise ValueError(
@@ -697,7 +750,8 @@ def search_flows(
             ]
             if not updated_after_list:
                 raise RuntimeError(
-                    f"Key 'updatedAt' is not present in the key 'results' of the answer of {url}. This should not happen."
+                    f"Key 'updatedAt' is not present in the key 'results' of "
+                    f"the answer of {url}. This should not happen."
                 )
             next_updated_after = max(updated_after_list)
             query_json["where"]["updatedAfter"] = next_updated_after
@@ -709,7 +763,7 @@ def _post_search_flows(session, url, query_json):
     try:
         post_res = session.post(url, json=query_json, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"POST request on {url} failed. Error: {str(e)}") from e
     status_code = post_res.status_code
     if status_code != 200:
         error_code = error_msg = None
@@ -720,7 +774,8 @@ def _post_search_flows(session, url, query_json):
         except Exception:
             pass
         raise RuntimeError(
-            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+            f"POST request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}"
         )
     flows_dict = post_res.json()
     logger.debug(f"Answer JSON: {flows_dict}")
@@ -758,7 +813,8 @@ def get_flow(session, flow_id, doc_type=None):
         doc_type_values = ("Metadata", "Original", "Converted", "ReadableView")
         if doc_type not in doc_type_values:
             raise ValueError(
-                f"Value {doc_type} is not allowed for the argument doc_type. Allowed values: {doc_type_values}"
+                f"Value {doc_type} is not allowed for the argument doc_type. "
+                f"Allowed values: {doc_type_values}"
             )
     platform = _get_plateform(session)
     if platform not in PLATFORM2BASE_URL:
@@ -773,7 +829,7 @@ def get_flow(session, flow_id, doc_type=None):
     try:
         get_res = session.get(url, params=params, timeout=TIMEOUT)
     except Exception as e:
-        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}")
+        raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}") from e
     status_code = get_res.status_code
     if status_code != 200:
         error_code = error_msg = None
@@ -784,7 +840,8 @@ def get_flow(session, flow_id, doc_type=None):
         except Exception:
             pass
         raise RuntimeError(
-            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+            f"GET request on {url} failed ({status_code}). "
+            f"Error code: {error_code}. Error message: {error_msg}"
         )
     if not doc_type or doc_type == "Metadata":  # Metadata is the default
         metadata_dict = get_res.json()
@@ -966,8 +1023,8 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
 
 
 def _cdar_check_xsd(xml_bytes):
-    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(
-        CDAR_XSD_FILE
+    xsd_absolute_filepath = importlib.resources.files.joinpath(
+        __package__, CDAR_XSD_FILE
     )
     logger.debug(f"Using CDAR XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
@@ -983,7 +1040,7 @@ def _cdar_check_xsd(xml_bytes):
             "XML Schema Definition. "
             "Here is the error, which may give you an idea on the "
             f"cause of the problem: {str(e)}."
-        )
+        ) from e
     logger.info("CDAR XML file successfully checked against XSD")
 
 
@@ -993,7 +1050,7 @@ def _cdar_check_schematron(xml_bytes):
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
-    xsl_file = str(importlib_resources.files(__package__).joinpath(CDAR_XSL_FILE))
+    xsl_file = str(importlib.resources.files.joinpath(__package__, CDAR_XSL_FILE))
     with saxonche.PySaxonProcessor() as saxproc:
         xslt_proc = saxproc.new_xslt30_processor()
         xdm_node = saxproc.parse_xml(xml_text=xml_str_no_bom)
@@ -1062,7 +1119,7 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     try:
         xml_root = etree.fromstring(xml_bytes)
     except Exception as e:
-        raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}")
+        raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}") from e
     if check_xsd:
         _cdar_check_xsd(xml_bytes)
     if check_schematron:
@@ -1236,7 +1293,10 @@ def _parse_flow_dict(flow_dict):
                     and detail.get("reasonCode")
                     and detail.get("reasonMessage")
                 ):
-                    msg = f"{detail['level']} on {detail['item']}: {detail['reasonMessage']} (code: {detail['reasonCode']})"
+                    msg = (
+                        f"{detail['level']} on {detail['item']}: "
+                        f"{detail['reasonMessage']} (code: {detail['reasonCode']})"
+                    )
                     messages.append(msg)
             flow_dict["ap_error_details"] = "\n".join(messages) or False
     if flow_dict.get("flowDirection"):
