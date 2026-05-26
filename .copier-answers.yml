@@ -1,0 +1,18 @@
+# Do NOT update manually; changes here will be overwritten by Copier
+_commit: be7ffe8
+_src_path: https://github.com/akretion/copier-python-package
+author_email: alexis.delattre@akretion.com
+author_name: Alexis de Lattre
+development_status: 3 - Alpha
+github_repo: pyfrctc
+licence: GNU Lesser General Public License v2 or later (LGPLv2+)
+package_description: Helpers for eInvoicing and eReporting in France
+package_name: pyfrctc
+python_version:
+- '3.9'
+- '3.10'
+- '3.11'
+- '3.12'
+- '3.13'
+- '3.14'
+
