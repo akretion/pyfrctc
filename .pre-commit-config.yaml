@@ -1,3 +1,6 @@
+exclude: |
+  src/pyfrctc/cdar-schematron|
+  src/pyfrctc/cdar-xsd
 default_language_version:
   python: python3
 repos:

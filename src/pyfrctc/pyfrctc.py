@@ -2,20 +2,23 @@
 # @author: Alexis de Lattre <alexis.delattre@akretion.com>
 # Licence LGPL-2.1 or later (https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
 
+import base64
+import datetime
+import importlib.metadata
+import importlib.resources as importlib_resources
+import json
 import logging
+from io import BytesIO
+
+import pytz
+import saxonche
+from lxml import etree, objectify
+
 # from requests_oauthlib import OAuth2Session
 # from oauthlib.oauth2 import BackendApplicationClient
 from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
-import json
-import importlib.metadata
-import datetime
-import pytz
-import base64
-from io import BytesIO
-from lxml import etree, objectify
-import saxonche
-import importlib.resources as importlib_resources
+
 # from pprint import pprint
 
 try:
@@ -25,29 +28,29 @@ except AttributeError:
 
 
 VERSION = importlib.metadata.version("pyfrctc")
-FORMAT = '%(asctime)s [%(levelname)s] %(message)s'
+FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 logging.basicConfig(format=FORMAT)
-logger = logging.getLogger('pyfrctc')
+logger = logging.getLogger("pyfrctc")
 logger.setLevel(logging.INFO)
 
 PLATFORM2TOKEN_URL = {
-    'superpdp': 'https://api.superpdp.tech/oauth2/token',
-    }
+    "superpdp": "https://api.superpdp.tech/oauth2/token",
+}
 PLATFORM2BASE_URL = {
-    'superpdp': 'https://api.superpdp.tech',
-    }
-AFNOR_API_VERSION = 'v1'
+    "superpdp": "https://api.superpdp.tech",
+}
+AFNOR_API_VERSION = "v1"
 LIMIT = 100  # 100 is the max value for multi-page requests
 TIMEOUT = 30
 CDAR_XSD_FILE = "cdar-xsd/CrossDomainAcknowledgementAndResponse_100pD22B.xsd"
 CDAR_XSL_FILE = "cdar-schematron/20260430_BR-FR-CDV-Schematron-CDAR_V1.3.1.xsl"
 CDAR_NS_MAP = {
-    'qdt': "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
-    'udt': "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
-    'ram': "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
-    'rsm': "urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100",
-    'xsi': "http://www.w3.org/2001/XMLSchema-instance"
-    }
+    "qdt": "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
+    "udt": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
+    "ram": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+    "rsm": "urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100",
+    "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+}
 
 
 def _get_plateform(session):
@@ -56,24 +59,26 @@ def _get_plateform(session):
     for plateform, token_url in PLATFORM2TOKEN_URL.items():
         if token_url == session.auto_refresh_url:
             return plateform
-    logger.warning(f"token_url {token_url} is not in PLATFORM2TOKEN_URL. It should never happen.")
+    logger.warning(
+        f"token_url {token_url} is not in PLATFORM2TOKEN_URL. It should never happen."
+    )
     return None
 
 
 def healthcheck(session, raise_if_error=True, type="directory"):
     if not session:
         raise ValueError("session argument has no value")
-    if type not in ('directory', 'flow'):
+    if type not in ("directory", "flow"):
         raise ValueError("type argument can have 2 values: 'directory' or 'flow'")
     platform = _get_plateform(session)
     if platform not in PLATFORM2BASE_URL:
         raise ValueError(f"Platform {platform} is not supported yet.")
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-{type}/{AFNOR_API_VERSION}/healthcheck"
-    logger.info(f'Sending GET request on {url} (v{VERSION})')
+    logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
     except Exception as e:
-        logger.warning(f'GET request on {url} failed. Error: {str(e)}')
+        logger.warning(f"GET request on {url} failed. Error: {str(e)}")
         if raise_if_error:
             raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}")
         return False
@@ -81,9 +86,11 @@ def healthcheck(session, raise_if_error=True, type="directory"):
     if status_code == 200:
         return True
     else:
-        logger.warning(f'GET request on {url} returned HTTP error {status_code}')
+        logger.warning(f"GET request on {url} returned HTTP error {status_code}")
         if raise_if_error:
-            raise ConnectionError(f"GET request on {url} returned HTTP error {status_code}.")
+            raise ConnectionError(
+                f"GET request on {url} returned HTTP error {status_code}."
+            )
         return False
 
 
@@ -112,45 +119,49 @@ def get_directory_siren(session, siren):
         return False
     elif status_code == 200:
         siren_dict = get_res.json()
-        logger.debug(f'Answer JSON: {siren_dict}')
-        answer_siren = siren_dict.get('siren')
+        logger.debug(f"Answer JSON: {siren_dict}")
+        answer_siren = siren_dict.get("siren")
         if answer_siren != siren:
-            raise RuntimeError(f"Answer of GET request on {url} is inconsistent: SIREN in answer ({answer_siren}) is different from query SIREN ({siren}). This should never happen.")
+            raise RuntimeError(
+                f"Answer of GET request on {url} is inconsistent: SIREN in answer ({answer_siren}) is different from query SIREN ({siren}). This should never happen."
+            )
         return siren_dict
     else:
         error_code = error_msg = None
         try:
             error_json = get_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
+        raise RuntimeError(
+            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+        )
 
 
 def get_directory_siren_parsed(session, siren):
     siren_dict = get_directory_siren(session, siren)
     if siren_dict:
-        closed = siren_dict.get('administrativeStatus') == 'C'
+        closed = siren_dict.get("administrativeStatus") == "C"
         entity_type = "no"
-        if siren_dict.get('entityType'):
+        if siren_dict.get("entityType"):
             entity_type_map = {
-                'PrivateVatRegistered': 'private',
-                'Public': 'public',
-                }
-            entity_type = entity_type_map[siren_dict['entityType']]
+                "PrivateVatRegistered": "private",
+                "Public": "public",
+            }
+            entity_type = entity_type_map[siren_dict["entityType"]]
         res = {
-            "name": siren_dict.get('businessName'),
+            "name": siren_dict.get("businessName"),
             "closed": closed,
             "entity_type": entity_type,
-            "siren": siren_dict['siren'],
-            }
+            "siren": siren_dict["siren"],
+        }
     else:
         siren = "".join(x for x in siren if not x.isspace())
         res = {
-            'entity_type': 'no',
-            'siren': siren,
-            }
+            "entity_type": "no",
+            "siren": siren,
+        }
     return res
 
 
@@ -178,39 +189,53 @@ def get_directory_siret(session, siret):
         error_code = error_msg = None
         try:
             error_json = get_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}.")
+        raise RuntimeError(
+            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}."
+        )
     siret_dict = get_res.json()
-    logger.debug(f'Answer JSON: {siret_dict}')
-    answer_siret = siret_dict.get('siret')
+    logger.debug(f"Answer JSON: {siret_dict}")
+    answer_siret = siret_dict.get("siret")
     if answer_siret != siret:
-        raise RuntimeError(f"Answer of GET request on {url} is inconsistent: SIRET in answer ({answer_siret}) is different from query SIRET ({siret}). This should never happen.")
+        raise RuntimeError(
+            f"Answer of GET request on {url} is inconsistent: SIRET in answer ({answer_siret}) is different from query SIRET ({siret}). This should never happen."
+        )
     return siret_dict
 
 
 def get_directory_siret_parsed(session, siret):
     siret_dict = get_directory_siret(session, siret)
-    closed = siret_dict.get('administrativeStatus') == 'C'
+    closed = siret_dict.get("administrativeStatus") == "C"
     res = {
-        "name": siret_dict.get('name'),
+        "name": siret_dict.get("name"),
         "closed": closed,
-        "country_code": siret_dict.get('address', {}).get('countryCode'),
-        "zip": siret_dict.get('address', {}).get('postalCode'),
-        "street": siret_dict.get('address', {}).get('addressLine1'),
-        "city": siret_dict.get('address', {}).get('locality'),
-        "siret": siret_dict['siret'],
-        }
+        "country_code": siret_dict.get("address", {}).get("countryCode"),
+        "zip": siret_dict.get("address", {}).get("postalCode"),
+        "street": siret_dict.get("address", {}).get("addressLine1"),
+        "city": siret_dict.get("address", {}).get("locality"),
+        "siret": siret_dict["siret"],
+    }
     # Reminder: a public entity without service nor commitment required doesn't have a
     # key 'b2gAdditionalData' in JSON answer
-    if 'b2gAdditionalData' in siret_dict and isinstance(siret_dict['b2gAdditionalData'], dict):
-        res.update({
-            'b2g_service_required': siret_dict['b2gAdditionalData'].get('serviceCodeStatus'),
-            'b2g_commitment_required': siret_dict['b2gAdditionalData'].get('managesLegalCommitmentCode'),
-            'b2g_service_or_commitment_required': siret_dict['b2gAdditionalData'].get('managesLegalCommitmentOrServiceCode'),
-        })
+    if "b2gAdditionalData" in siret_dict and isinstance(
+        siret_dict["b2gAdditionalData"], dict
+    ):
+        res.update(
+            {
+                "b2g_service_required": siret_dict["b2gAdditionalData"].get(
+                    "serviceCodeStatus"
+                ),
+                "b2g_commitment_required": siret_dict["b2gAdditionalData"].get(
+                    "managesLegalCommitmentCode"
+                ),
+                "b2g_service_or_commitment_required": siret_dict[
+                    "b2gAdditionalData"
+                ].get("managesLegalCommitmentOrServiceCode"),
+            }
+        )
     return res
 
 
@@ -246,12 +271,15 @@ def get_directory_lines(session, siren_or_siret):
         },
         "limit": LIMIT,
         "ignore": 0,  # for multipage
-        "sorting": [{
-            'field': "addressingIdentifier", "sortingOrder": "ascending",
-            }],
-        }
+        "sorting": [
+            {
+                "field": "addressingIdentifier",
+                "sortingOrder": "ascending",
+            }
+        ],
+    }
     if siret:
-        query_json['filters']["siret"] = {"op": "strict", "value": siret}
+        query_json["filters"]["siret"] = {"op": "strict", "value": siret}
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-directory/{AFNOR_API_VERSION}/directory-line/search"
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     logger.debug(f"Json in query: {query_json}")
@@ -264,22 +292,33 @@ def get_directory_lines(session, siren_or_siret):
         error_code = error_msg = None
         try:
             error_json = post_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}.")
+        raise RuntimeError(
+            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}."
+        )
     elif status_code == 204:
-        logger.warning("POST request on {url} returned HTTP code 204, which means there is no directory lines.")
+        logger.warning(
+            "POST request on {url} returned HTTP code 204, which means there is no directory lines."
+        )
         return res
     elif status_code == 206:
-        raise RuntimeError(f"POST request on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100).")
+        raise RuntimeError(
+            f"POST request on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100)."
+        )
     list_dir_dict = post_res.json()
     logger.debug(f"Answer JSON: {list_dir_dict}")
-    if "results" in list_dir_dict and isinstance(list_dir_dict['results'], list) and 'totalNumberOfResults' in list_dir_dict and isinstance(list_dir_dict['totalNumberOfResults'], int):
-        for dir_line in list_dir_dict['results']:
-            res[dir_line['addressingIdentifier']] = dir_line
-        result_total = list_dir_dict['totalNumberOfResults']
+    if (
+        "results" in list_dir_dict
+        and isinstance(list_dir_dict["results"], list)
+        and "totalNumberOfResults" in list_dir_dict
+        and isinstance(list_dir_dict["totalNumberOfResults"], int)
+    ):
+        for dir_line in list_dir_dict["results"]:
+            res[dir_line["addressingIdentifier"]] = dir_line
+        result_total = list_dir_dict["totalNumberOfResults"]
     else:
         raise RuntimeError(f"Answer to POST request on {url} is malformed.")
     if result_total > LIMIT:
@@ -290,37 +329,58 @@ def get_directory_lines(session, siren_or_siret):
             try:
                 post_res = session.post(url, json=query_json, timeout=TIMEOUT)
             except Exception as e:
-                logger.warning(f'POST request on {url} failed. Error: {str(e)}')
-                raise ConnectionError(f"POST request number {req_count} on {url} failed. Error: {str(e)}")
+                logger.warning(f"POST request on {url} failed. Error: {str(e)}")
+                raise ConnectionError(
+                    f"POST request number {req_count} on {url} failed. Error: {str(e)}"
+                )
             status_code = post_res.status_code
             if status_code not in (200, 204, 206):
-                raise ConnectionError(f"POST request number {req_count} on {url} returned error code {status_code}.")
+                raise ConnectionError(
+                    f"POST request number {req_count} on {url} returned error code {status_code}."
+                )
 
             elif status_code == 204:
                 # this should not happen in a second+ iteration
-                raise Exception("POST request number {req_count} on {url} returned HTTP code 204. It should not happen on a 'next page' iteration.")
+                raise Exception(
+                    "POST request number {req_count} on {url} returned HTTP code 204. It should not happen on a 'next page' iteration."
+                )
 
             elif status_code == 206:
-                raise Exception("POST request number {req_count}  on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100).")
+                raise Exception(
+                    "POST request number {req_count}  on {url} returned HTTP code 206. It should never happen because we set the limit to {LIMIT}, which is <= to the minimum value that must be supported by all platforms (100)."
+                )
             list_dir_dict = post_res.json()
             logger.debug(f"Answer JSON: {list_dir_dict}")
-            if "results" in list_dir_dict and isinstance(list_dir_dict['results'], list) and 'totalNumberOfResults' in list_dir_dict and isinstance(list_dir_dict['totalNumberOfResults'], int):
-                for dir_line in list_dir_dict['results']:
-                    res[dir_line['addressingIdentifier']] = dir_line
-                cur_result_total = list_dir_dict['totalNumberOfResults']
+            if (
+                "results" in list_dir_dict
+                and isinstance(list_dir_dict["results"], list)
+                and "totalNumberOfResults" in list_dir_dict
+                and isinstance(list_dir_dict["totalNumberOfResults"], int)
+            ):
+                for dir_line in list_dir_dict["results"]:
+                    res[dir_line["addressingIdentifier"]] = dir_line
+                cur_result_total = list_dir_dict["totalNumberOfResults"]
                 if cur_result_total != result_total:
-                    raise Exception("Answer to request number {req_count} on {url} returned a totalNumberOfResults of {cur_result_total} which is different from the value of the first request ({result_total}). This should never happen.")
+                    raise Exception(
+                        "Answer to request number {req_count} on {url} returned a totalNumberOfResults of {cur_result_total} which is different from the value of the first request ({result_total}). This should never happen."
+                    )
             else:
-                raise Exception(f"Answer to POST request number {req_count} on {url} is malformed.")
+                raise Exception(
+                    f"Answer to POST request number {req_count} on {url} is malformed."
+                )
             current_result_count += LIMIT
             req_count += 1
     if len(res) != result_total:
-        raise Exception(f"The number of directory lines ({len(res)}) is different from the total number of results announced by the API ({result_total}). This should never happen.")
-    logger.info(f'Returning {len(res)} directory lines')
+        raise Exception(
+            f"The number of directory lines ({len(res)}) is different from the total number of results announced by the API ({result_total}). This should never happen."
+        )
+    logger.info(f"Returning {len(res)} directory lines")
     return res
 
 
-def get_directory_lines_parsed(session, siren_or_siret, siret_parsed=None, filter_out_factures_publiques=True):
+def get_directory_lines_parsed(
+    session, siren_or_siret, siret_parsed=None, filter_out_factures_publiques=True
+):
     if siret_parsed is None:
         siret_parsed = {}
     identifier2vals = get_directory_lines(session, siren_or_siret)
@@ -333,108 +393,152 @@ def get_directory_lines_parsed(session, siren_or_siret, siret_parsed=None, filte
         siret = siren_or_siret
     if siret_parsed:
         if not siret:
-            raise RuntimeError("If siret_parsed arg has a value, siren_or_siret should be a SIRET")
-        if siret_parsed.get('siret') != siret:
-            raise RuntimeError(f"'siret' in siret_parsed (siret_parsed.get('siret')) should be identical to siret given in siren_or_siret arg ({siren_or_siret})")
+            raise RuntimeError(
+                "If siret_parsed arg has a value, siren_or_siret should be a SIRET"
+            )
+        if siret_parsed.get("siret") != siret:
+            raise RuntimeError(
+                f"'siret' in siret_parsed (siret_parsed.get('siret')) should be identical to siret given in siren_or_siret arg ({siren_or_siret})"
+            )
 
     res = {}
     for identifier, vals in identifier2vals.items():
         routing_code = routing_code_name = suffix = False
         commitment_required = False
-        dir_siren = vals.get('siren')
+        dir_siren = vals.get("siren")
         if not dir_siren:
             raise RuntimeError("A siren key should be present")
         if siren != dir_siren:
-            raise RuntimeError("SIREN in directory line value must be the same as SIREN given as argument")
-        dir_siret = vals.get('siret')
+            raise RuntimeError(
+                "SIREN in directory line value must be the same as SIREN given as argument"
+            )
+        dir_siret = vals.get("siret")
         if dir_siret:
             if len(dir_siret) != 14:
-                raise RuntimeError("SIRET in directory line {identifier} should have 14 caracters")
+                raise RuntimeError(
+                    "SIRET in directory line {identifier} should have 14 caracters"
+                )
             if not siret_is_valid(dir_siret):
-                raise RuntimeError("SIRET {dir_siret} in directory line {identifier} is invalid")
+                raise RuntimeError(
+                    "SIRET {dir_siret} in directory line {identifier} is invalid"
+                )
             if siret and siret != dir_siret:
-                raise RuntimeError("SIRET in directory line value must be the same as SIRET given as argument")
+                raise RuntimeError(
+                    "SIRET in directory line value must be the same as SIRET given as argument"
+                )
         state_map = {
-            'Upcoming': 'upcoming',
-            'Enabled': 'active',
-            'Disabled': 'disabled',
-            }
-        dir_state = vals.get('directoryLineStatus')
+            "Upcoming": "upcoming",
+            "Enabled": "active",
+            "Disabled": "disabled",
+        }
+        dir_state = vals.get("directoryLineStatus")
         if dir_state:
             if dir_state not in state_map:
-                raise RuntimeError(f"Directory line {identifier} has directoryLineStatus '{dir_state}'. This value is not expected.")
+                raise RuntimeError(
+                    f"Directory line {identifier} has directoryLineStatus '{dir_state}'. This value is not expected."
+                )
             state = state_map[dir_state]
         else:
-            state = 'disabled'
+            state = "disabled"
 
         if "routingCode" in vals:
             type = "routing_code"
-            routing_dict = vals['routingCode']
+            routing_dict = vals["routingCode"]
             if not isinstance(routing_dict, dict):
-                raise RuntimeError(f"routingCode must be a dict in directory line {identifier}")
+                raise RuntimeError(
+                    f"routingCode must be a dict in directory line {identifier}"
+                )
             if not dir_siret:
-                raise RuntimeError("SIRET is not provided in routing directory line {identifier}")
+                raise RuntimeError(
+                    "SIRET is not provided in routing directory line {identifier}"
+                )
             if "addressingSuffix" in vals:
-                raise RuntimeError("Key 'addressingSuffix' should not be present in routing directory line {identifier}")
+                raise RuntimeError(
+                    "Key 'addressingSuffix' should not be present in routing directory line {identifier}"
+                )
             routing_code = routing_dict.get("routingIdentifier")
             if not routing_code:
-                raise RuntimeError(f"Missing 'routingIdentifier' in directory line {identifier}")
+                raise RuntimeError(
+                    f"Missing 'routingIdentifier' in directory line {identifier}"
+                )
             if not isinstance(routing_code, str):
-                raise RuntimeError(f"routingIdentifier must be a string in directory line {identifier}")
+                raise RuntimeError(
+                    f"routingIdentifier must be a string in directory line {identifier}"
+                )
             if filter_out_factures_publiques and routing_code == "FACTURES_PUBLIQUES":
                 continue
             routing_code_name = routing_dict.get("routingCodeName")
             if not routing_code_name:
-                raise RuntimeError(f"Missing 'routingCodeName' in directory line {identifier}")
+                raise RuntimeError(
+                    f"Missing 'routingCodeName' in directory line {identifier}"
+                )
             if not isinstance(routing_code_name, str):
-                raise RuntimeError(f"routingCodeName must be a string in directory line {identifier}")
+                raise RuntimeError(
+                    f"routingCodeName must be a string in directory line {identifier}"
+                )
             routing_id_type = routing_dict.get("routingIdentifierType")
             if routing_id_type != "0224":
-                raise RuntimeError(f"routingIdentifierType has value {routing_id_type} in directory line {identifier} (expected value is '0224')")
-            commitment_required = routing_dict.get('managesLegalCommitmentCode', False)
+                raise RuntimeError(
+                    f"routingIdentifierType has value {routing_id_type} in directory line {identifier} (expected value is '0224')"
+                )
+            commitment_required = routing_dict.get("managesLegalCommitmentCode", False)
             if not isinstance(commitment_required, bool):
-                raise RuntimeError(f"managesLegalCommitmentCode must be a boolean in directory line {identifier}")
-            if siret_parsed.get('b2g_commitment_required') and not commitment_required:
-                logger.warning(f"This public entity has global property commitment_required, but the directory line {identifier} is not marked as commitment_required")
+                raise RuntimeError(
+                    f"managesLegalCommitmentCode must be a boolean in directory line {identifier}"
+                )
+            if siret_parsed.get("b2g_commitment_required") and not commitment_required:
+                logger.warning(
+                    f"This public entity has global property commitment_required, but the directory line {identifier} is not marked as commitment_required"
+                )
                 commitment_required = True
             expected_identifier = f"{siren}_{siret}_{routing_code}"
 
         elif "addressingSuffix" in vals:
             type = "suffix"
-            suffix = vals['addressingSuffix']
+            suffix = vals["addressingSuffix"]
             if not isinstance(suffix, str):
                 raise RuntimeError("Value of 'addressingSuffix' must be a string")
             if dir_siret:
-                raise RuntimeError("SIRET should not be present on a directory line type suffix")
+                raise RuntimeError(
+                    "SIRET should not be present on a directory line type suffix"
+                )
             expected_identifier = f"{siren}_{suffix}"
         elif dir_siret:
             type = "siret"
-            if siret_parsed.get('b2g_commitment_required'):
-                logger.info(f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_commitment_required")
+            if siret_parsed.get("b2g_commitment_required"):
+                logger.info(
+                    f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_commitment_required"
+                )
                 commitment_required = True
-            elif siret_parsed.get('b2g_service_or_commitment_required'):
-                logger.info(f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_service_or_commitment_required")
+            elif siret_parsed.get("b2g_service_or_commitment_required"):
+                logger.info(
+                    f"SIRET directory line {identifier} forced to commitment_required because the public entity has b2g_service_or_commitment_required"
+                )
                 commitment_required = True
-            if siret_parsed.get('b2g_service_required'):
-                logger.info(f"SIRET directory line {identifier} forced to disabled because the public entity has service required")
-                state = 'disabled'
+            if siret_parsed.get("b2g_service_required"):
+                logger.info(
+                    f"SIRET directory line {identifier} forced to disabled because the public entity has service required"
+                )
+                state = "disabled"
             expected_identifier = f"{siren}_{siret}"
         else:
             type = "siren"
             expected_identifier = siren
         if expected_identifier != identifier:
-            raise RuntimeError(f"Directory line {identifier} type {type} was expected to be {expected_identifier}")
+            raise RuntimeError(
+                f"Directory line {identifier} type {type} was expected to be {expected_identifier}"
+            )
 
         new_vals = {
-            'type': type,
-            'siren': siren,
-            'siret': dir_siret,
+            "type": type,
+            "siren": siren,
+            "siret": dir_siret,
             "suffix": suffix,
             "routing_code": routing_code,
             "routing_code_name": routing_code_name,
             "commitment_required": commitment_required,
-            'state': state,
-            }
+            "state": state,
+        }
         res[identifier] = new_vals
     return res
 
@@ -451,22 +555,40 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
     if not isinstance(filename, str):
         raise ValueError("filename argument must be a string")
     if len(filename) > 255:
-        raise ValueError(f"filename length is {len(filename)}, which is over the maxium (255)")
-    if flow_syntax not in ('CII', 'UBL', 'Factur-X', 'CDAR', 'FRR'):
+        raise ValueError(
+            f"filename length is {len(filename)}, which is over the maxium (255)"
+        )
+    if flow_syntax not in ("CII", "UBL", "Factur-X", "CDAR", "FRR"):
         raise ValueError("flow_syntax argument has a wrong value")
-    if processing_rule not in ('B2B', 'B2BInt', 'B2C', 'B2G', 'B2GInt', 'OutOfScope', 'B2GOutOfScope', 'ArchiveOnly', 'NotApplicable'):
+    if processing_rule not in (
+        "B2B",
+        "B2BInt",
+        "B2C",
+        "B2G",
+        "B2GInt",
+        "OutOfScope",
+        "B2GOutOfScope",
+        "ArchiveOnly",
+        "NotApplicable",
+    ):
         raise ValueError("processing_rule argument has a wrong value")
     platform = _get_plateform(session)
     if platform not in PLATFORM2BASE_URL:
         raise ValueError(f"Plateform {platform} is not supported yet.")
     payload = {
-        'file': (filename, BytesIO(file_bin)),
-        'flowInfo': (None, json.dumps({
-            'flowSyntax': flow_syntax,
-            'name': filename,
-            # 'processingRule': processing_rule,  # not yet supported by SuperPDP
-            }), 'text/plain'),
-        }
+        "file": (filename, BytesIO(file_bin)),
+        "flowInfo": (
+            None,
+            json.dumps(
+                {
+                    "flowSyntax": flow_syntax,
+                    "name": filename,
+                    # 'processingRule': processing_rule,  # not yet supported by SuperPDP
+                }
+            ),
+            "text/plain",
+        ),
+    }
     url = f"{PLATFORM2BASE_URL[platform]}/afnor-flow/{AFNOR_API_VERSION}/flows"
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     try:
@@ -478,17 +600,21 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
         error_code = error_msg = None
         try:
             error_json = post_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
+        raise RuntimeError(
+            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+        )
     flow_dict = post_res.json()
     logger.debug(f"Answer JSON: {flow_dict}")
     # We could check that the value received == value sent for processingRule and name
-    answer_flow_syntax = flow_dict.get('flowSyntax')
+    answer_flow_syntax = flow_dict.get("flowSyntax")
     if answer_flow_syntax and answer_flow_syntax != flow_syntax:
-        raise RuntimeError(f"Query had flowSyntax={flow_syntax} but answer has flowSyntax={answer_flow_syntax}")
+        raise RuntimeError(
+            f"Query had flowSyntax={flow_syntax} but answer has flowSyntax={answer_flow_syntax}"
+        )
     return flow_dict
 
 
@@ -498,7 +624,9 @@ def send_flow_parsed(session, file_bin, filename, flow_syntax, processing_rule):
     return flow_dict
 
 
-def search_flows(session, updated_after, flow_direction, flow_type, updated_before=None):
+def search_flows(
+    session, updated_after, flow_direction, flow_type, updated_before=None
+):
     # Pagination works with the updatedAfter property
     # The comparison with current date is strict : updatedAt > updatedAfter
     if not session:
@@ -509,37 +637,48 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
     if flow_direction:
         if isinstance(flow_direction, str):
             flow_direction = [flow_direction]
-        flow_direction_values = ['In', 'Out']
+        flow_direction_values = ["In", "Out"]
         if isinstance(flow_direction, list):
             for flow_dir_value in flow_direction:
                 if flow_dir_value not in flow_direction_values:
-                    raise ValueError(f"Value {flow_dir_value} is not allowed for the argument flow_direction. Allowed values: {flow_direction_values}")
+                    raise ValueError(
+                        f"Value {flow_dir_value} is not allowed for the argument flow_direction. Allowed values: {flow_direction_values}"
+                    )
         else:
-            raise ValueError("Argument flow_direction must be a list of stings (or a string)")
+            raise ValueError(
+                "Argument flow_direction must be a list of stings (or a string)"
+            )
     if flow_type:
         if isinstance(flow_type, str):
             flow_type = [flow_type]
         flow_type_values = [
-            'CustomerInvoice', 'SupplierInvoice',
-            'StateInvoice',
-            'CustomerInvoiceLC', 'SupplierInvoiceLC',
-            'StateCustomerInvoiceLC', 'StateSupplierInvoiceLC',
-            ]  # LC = Life Cycle
+            "CustomerInvoice",
+            "SupplierInvoice",
+            "StateInvoice",
+            "CustomerInvoiceLC",
+            "SupplierInvoiceLC",
+            "StateCustomerInvoiceLC",
+            "StateSupplierInvoiceLC",
+        ]  # LC = Life Cycle
         if isinstance(flow_type, list):
             for flow_type_value in flow_type:
                 if flow_type_value not in flow_type_values:
-                    raise ValueError(f"Value {flow_type_value} is not allowed for the argument flow_type. Allowed values: {flow_type_values}")
+                    raise ValueError(
+                        f"Value {flow_type_value} is not allowed for the argument flow_type. Allowed values: {flow_type_values}"
+                    )
         else:
-            raise ValueError("Argument flow_type must be a list of strings (or a string)")
+            raise ValueError(
+                "Argument flow_type must be a list of strings (or a string)"
+            )
     platform = _get_plateform(session)
     if platform not in PLATFORM2BASE_URL:
         raise ValueError(f"Plateform {platform} is not supported yet.")
     query_json = {
         "where": {
             "updatedAfter": updated_after,
-            },
+        },
         "limit": LIMIT,
-        }
+    }
     if flow_type:
         query_json["where"]["flowType"] = flow_type
     if flow_direction:
@@ -553,11 +692,15 @@ def search_flows(session, updated_after, flow_direction, flow_type, updated_befo
         if len(res_single_call) < LIMIT:
             next_page = False
         else:
-            updated_after_list = [flow['updatedAt'] for flow in res_single_call if flow.get('updatedAt')]
+            updated_after_list = [
+                flow["updatedAt"] for flow in res_single_call if flow.get("updatedAt")
+            ]
             if not updated_after_list:
-                raise RuntimeError(f"Key 'updatedAt' is not present in the key 'results' of the answer of {url}. This should not happen.")
+                raise RuntimeError(
+                    f"Key 'updatedAt' is not present in the key 'results' of the answer of {url}. This should not happen."
+                )
             next_updated_after = max(updated_after_list)
-            query_json['where']['updatedAfter'] = next_updated_after
+            query_json["where"]["updatedAfter"] = next_updated_after
     return res
 
 
@@ -572,23 +715,29 @@ def _post_search_flows(session, url, query_json):
         error_code = error_msg = None
         try:
             error_json = post_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
+        raise RuntimeError(
+            f"POST request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+        )
     flows_dict = post_res.json()
-    logger.debug(f'Answer JSON: {flows_dict}')
-    res = flows_dict.get('results', [])
+    logger.debug(f"Answer JSON: {flows_dict}")
+    res = flows_dict.get("results", [])
     return res
 
 
-def search_flows_parsed(session, updated_after, flow_direction, flow_type, updated_before=None):
+def search_flows_parsed(
+    session, updated_after, flow_direction, flow_type, updated_before=None
+):
     if isinstance(flow_direction, str):
         flow_direction = flow_direction.capitalize()
     elif isinstance(flow_direction, list):
         flow_direction = [x.capitalize() for x in flow_direction]
-    res = search_flows(session, updated_after, flow_direction, flow_type, updated_before=updated_before)
+    res = search_flows(
+        session, updated_after, flow_direction, flow_type, updated_before=updated_before
+    )
     for flow_dict in res:
         _parse_flow_dict(flow_dict)
     return res
@@ -606,17 +755,21 @@ def get_flow(session, flow_id, doc_type=None):
     if not isinstance(flow_id, str):
         raise ValueError("flow_id argument must be a string")
     if doc_type is not None:
-        doc_type_values = ('Metadata', 'Original', 'Converted', 'ReadableView')
+        doc_type_values = ("Metadata", "Original", "Converted", "ReadableView")
         if doc_type not in doc_type_values:
-            raise ValueError(f"Value {doc_type} is not allowed for the argument doc_type. Allowed values: {doc_type_values}")
+            raise ValueError(
+                f"Value {doc_type} is not allowed for the argument doc_type. Allowed values: {doc_type_values}"
+            )
     platform = _get_plateform(session)
     if platform not in PLATFORM2BASE_URL:
         raise ValueError(f"Plateform {platform} is not supported yet.")
-    url = f"{PLATFORM2BASE_URL[platform]}/afnor-flow/{AFNOR_API_VERSION}/flows/{flow_id}"
+    url = (
+        f"{PLATFORM2BASE_URL[platform]}/afnor-flow/{AFNOR_API_VERSION}/flows/{flow_id}"
+    )
     params = {}
     if doc_type:
-        params['docType'] = doc_type
-    logger.info(f'Sending GET request on {url} with params {params} (v{VERSION})')
+        params["docType"] = doc_type
+    logger.info(f"Sending GET request on {url} with params {params} (v{VERSION})")
     try:
         get_res = session.get(url, params=params, timeout=TIMEOUT)
     except Exception as e:
@@ -626,14 +779,16 @@ def get_flow(session, flow_id, doc_type=None):
         error_code = error_msg = None
         try:
             error_json = get_res.json()
-            error_code = error_json.get('errorCode')
-            error_msg = error_json.get('errorMessage')
+            error_code = error_json.get("errorCode")
+            error_msg = error_json.get("errorMessage")
         except Exception:
             pass
-        raise RuntimeError(f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}")
-    if not doc_type or doc_type == 'Metadata':  # Metadata is the default
+        raise RuntimeError(
+            f"GET request on {url} failed ({status_code}). Error code: {error_code}. Error message: {error_msg}"
+        )
+    if not doc_type or doc_type == "Metadata":  # Metadata is the default
         metadata_dict = get_res.json()
-        logger.debug(f'Answer JSON: {metadata_dict}')
+        logger.debug(f"Answer JSON: {metadata_dict}")
         return metadata_dict
     file_bin = get_res.content
     if not file_bin:
@@ -657,94 +812,151 @@ def get_flow_metadata_parsed(session, flow_id):
 
 def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
     """Generate CDAR XML file for life cycle"""
-    RSM = objectify.ElementMaker(namespace=CDAR_NS_MAP['rsm'], nsmap=CDAR_NS_MAP, annotate=False)
-    RAM = objectify.ElementMaker(namespace=CDAR_NS_MAP['ram'], annotate=False)
-    UDT = objectify.ElementMaker(namespace=CDAR_NS_MAP['udt'], annotate=False)
-    QDT = objectify.ElementMaker(namespace=CDAR_NS_MAP['qdt'], annotate=False)
+    RSM = objectify.ElementMaker(
+        namespace=CDAR_NS_MAP["rsm"], nsmap=CDAR_NS_MAP, annotate=False
+    )
+    RAM = objectify.ElementMaker(namespace=CDAR_NS_MAP["ram"], annotate=False)
+    UDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["udt"], annotate=False)
+    QDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["qdt"], annotate=False)
 
     root = RSM.CrossDomainAcknowledgementAndResponse(
         RSM.ExchangedDocumentContext(
             RAM.BusinessProcessSpecifiedDocumentContextParameter(
-                *[RAM.ID(data_dict['MDT-2']) for _ in [1] if "MDT-2" in data_dict]
+                *[RAM.ID(data_dict["MDT-2"]) for _ in [1] if "MDT-2" in data_dict]
             ),
-            RAM.GuidelineSpecifiedDocumentContextParameter(
-                RAM.ID(data_dict['MDT-3'])
-            )
+            RAM.GuidelineSpecifiedDocumentContextParameter(RAM.ID(data_dict["MDT-3"])),
         ),
-
         RSM.ExchangedDocument(
-            RAM.ID(data_dict['MDT-4']),
-            *[RAM.Name(data_dict['MDT-5']) for _ in [1] if "MDT-5" in data_dict],
-            RAM.IssueDateTime(
-                UDT.DateTimeString(data_dict['MDT-8'], format="204")
-            ),
-            RAM.SenderTradeParty(
-                RAM.RoleCode(data_dict['MDT-21'])
-            ),
+            RAM.ID(data_dict["MDT-4"]),
+            *[RAM.Name(data_dict["MDT-5"]) for _ in [1] if "MDT-5" in data_dict],
+            RAM.IssueDateTime(UDT.DateTimeString(data_dict["MDT-8"], format="204")),
+            RAM.SenderTradeParty(RAM.RoleCode(data_dict["MDT-21"])),
             RAM.IssuerTradeParty(
-                RAM.GlobalID(data_dict['MDT-38'], schemeID="0002"),
-                RAM.Name(data_dict['MDT-39']),
-                RAM.RoleCode(data_dict['MDT-40'])
+                RAM.GlobalID(data_dict["MDT-38"], schemeID="0002"),
+                RAM.Name(data_dict["MDT-39"]),
+                RAM.RoleCode(data_dict["MDT-40"]),
             ),
             RAM.RecipientTradeParty(
-                RAM.GlobalID(data_dict['MDT-57'], schemeID="0002"),
-                RAM.Name(data_dict['MDT-58']),
-                RAM.RoleCode(data_dict['MDT-59']),
+                RAM.GlobalID(data_dict["MDT-57"], schemeID="0002"),
+                RAM.Name(data_dict["MDT-58"]),
+                RAM.RoleCode(data_dict["MDT-59"]),
                 RAM.URIUniversalCommunication(
-                    RAM.URIID(data_dict['MDT-73'], schemeID="0225")
-                )
-            )
+                    RAM.URIID(data_dict["MDT-73"], schemeID="0225")
+                ),
+            ),
         ),
-
         RSM.AcknowledgementDocument(
             RAM.MultipleReferencesIndicator(
-                UDT.Indicator(str(data_dict['MDT-74']).lower())
+                UDT.Indicator(str(data_dict["MDT-74"]).lower())
             ),
-            RAM.TypeCode(str(data_dict['MDT-77'])),
-            RAM.IssueDateTime(
-                UDT.DateTimeString(data_dict['MDT-78'], format="204")
-            ),
+            RAM.TypeCode(str(data_dict["MDT-77"])),
+            RAM.IssueDateTime(UDT.DateTimeString(data_dict["MDT-78"], format="204")),
             RAM.ReferenceReferencedDocument(
-                RAM.IssuerAssignedID(data_dict['MDT-87']),
-                *[RAM.StatusCode(data_dict['MDT-88']) for _ in [1] if "MDT-88" in data_dict],
-                RAM.TypeCode(data_dict['MDT-91']),
-                *[RAM.ReceiptDateTime(
-                    UDT.DateTimeString(data_dict['MDT-95'], format="204")
-                ) for _ in [1] if "MDT-95" in data_dict],
-                *[RAM.AttachmentBinaryObject(base64.encodebytes(attach['bin']), filename=attach['filename'], mimeCode=attach['mime_type']) for attach in data_dict.get('MDT-96', [])],
+                RAM.IssuerAssignedID(data_dict["MDT-87"]),
+                *[
+                    RAM.StatusCode(data_dict["MDT-88"])
+                    for _ in [1]
+                    if "MDT-88" in data_dict
+                ],
+                RAM.TypeCode(data_dict["MDT-91"]),
+                *[
+                    RAM.ReceiptDateTime(
+                        UDT.DateTimeString(data_dict["MDT-95"], format="204")
+                    )
+                    for _ in [1]
+                    if "MDT-95" in data_dict
+                ],
+                *[
+                    RAM.AttachmentBinaryObject(
+                        base64.encodebytes(attach["bin"]),
+                        filename=attach["filename"],
+                        mimeCode=attach["mime_type"],
+                    )
+                    for attach in data_dict.get("MDT-96", [])
+                ],
                 RAM.FormattedIssueDateTime(
-                    QDT.DateTimeString(data_dict['MDT-100'], format="102")
+                    QDT.DateTimeString(data_dict["MDT-100"], format="102")
                 ),
-                RAM.ProcessConditionCode(data_dict['MDT-105']),
-                RAM.ProcessCondition(data_dict['MDT-106']),
+                RAM.ProcessConditionCode(data_dict["MDT-105"]),
+                RAM.ProcessCondition(data_dict["MDT-106"]),
                 RAM.IssuerTradeParty(
-                    RAM.GlobalID(data_dict['MDT-129'], schemeID="0002")
+                    RAM.GlobalID(data_dict["MDT-129"], schemeID="0002")
                 ),
-                *[RAM.SpecifiedDocumentStatus(
-                    *[RAM.ReasonCode(doc_status['MDT-113']) for _ in [1] if "MDT-113" in doc_status],
-                    *[RAM.Reason(doc_status['MDT-114'])
-                        for _ in [1] if "MDT-114" in doc_status],
-                    *[RAM.RequestedActionCode(doc_status['MDT-121']) for _ in [1] if 'MDT-121' in doc_status],
-                    *[RAM.RequestedAction(doc_status['MDT-122']) for _ in [1] if 'MDT-122' in doc_status],
-                    *[RAM.IncludedNote(
-                        RAM.Content(doc_status['MDT-126'])
-                        ) for _ in [1] if "MDT-126" in doc_status],
-                    *[RAM.SpecifiedDocumentCharacteristic(
-                        *[RAM.TypeCode(doc_characteristic['MDT-207']) for _ in [1] if "MDT-207" in doc_characteristic],
-                        *[RAM.ValueChangedIndicator(
-                            UDT.IndicatorString(str(doc_characteristic['MDT-209']).lower())) for _ in [1] if 'MDT-209' in doc_characteristic],
-                        *[RAM.ValueAmount(doc_characteristic['MDT-215']['float'], currencyID=doc_characteristic['MDT-215']['currency']) for _ in [1] if "MDT-215" in doc_characteristic],
-                        *[RAM.ValueDateTime(
-                            UDT.DateTimeString(doc_characteristic['MDT-219'], format="102")
-                            ) for _ in [1] if 'MDT-219' in doc_characteristic],
-                        ) for doc_characteristic in doc_status.get('MDG-43', [])],
-                    ) for doc_status in data_dict.get('MDG-37', [])],
-
+                *[
+                    RAM.SpecifiedDocumentStatus(
+                        *[
+                            RAM.ReasonCode(doc_status["MDT-113"])
+                            for _ in [1]
+                            if "MDT-113" in doc_status
+                        ],
+                        *[
+                            RAM.Reason(doc_status["MDT-114"])
+                            for _ in [1]
+                            if "MDT-114" in doc_status
+                        ],
+                        *[
+                            RAM.RequestedActionCode(doc_status["MDT-121"])
+                            for _ in [1]
+                            if "MDT-121" in doc_status
+                        ],
+                        *[
+                            RAM.RequestedAction(doc_status["MDT-122"])
+                            for _ in [1]
+                            if "MDT-122" in doc_status
+                        ],
+                        *[
+                            RAM.IncludedNote(RAM.Content(doc_status["MDT-126"]))
+                            for _ in [1]
+                            if "MDT-126" in doc_status
+                        ],
+                        *[
+                            RAM.SpecifiedDocumentCharacteristic(
+                                *[
+                                    RAM.TypeCode(doc_characteristic["MDT-207"])
+                                    for _ in [1]
+                                    if "MDT-207" in doc_characteristic
+                                ],
+                                *[
+                                    RAM.ValueChangedIndicator(
+                                        UDT.IndicatorString(
+                                            str(doc_characteristic["MDT-209"]).lower()
+                                        )
+                                    )
+                                    for _ in [1]
+                                    if "MDT-209" in doc_characteristic
+                                ],
+                                *[
+                                    RAM.ValueAmount(
+                                        doc_characteristic["MDT-215"]["float"],
+                                        currencyID=doc_characteristic["MDT-215"][
+                                            "currency"
+                                        ],
+                                    )
+                                    for _ in [1]
+                                    if "MDT-215" in doc_characteristic
+                                ],
+                                *[
+                                    RAM.ValueDateTime(
+                                        UDT.DateTimeString(
+                                            doc_characteristic["MDT-219"], format="102"
+                                        )
+                                    )
+                                    for _ in [1]
+                                    if "MDT-219" in doc_characteristic
+                                ],
+                            )
+                            for doc_characteristic in doc_status.get("MDG-43", [])
+                        ],
+                    )
+                    for doc_status in data_dict.get("MDG-37", [])
+                ],
             ),
-        )
+        ),
     )
 
-    xml_bytes = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+    xml_bytes = etree.tostring(
+        root, pretty_print=True, xml_declaration=True, encoding="UTF-8"
+    )
     # verif schema => faire comme lib fx
     if check_xsd:
         _cdar_check_xsd(xml_bytes)
@@ -754,31 +966,33 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
 
 
 def _cdar_check_xsd(xml_bytes):
-    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(CDAR_XSD_FILE)
-    logger.debug(f'Using CDAR XSD file {xsd_absolute_filepath}')
+    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(
+        CDAR_XSD_FILE
+    )
+    logger.debug(f"Using CDAR XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
     try:
         t = etree.parse(BytesIO(xml_bytes))
         official_schema.assertValid(t)
     except Exception as e:
         # if the validation of the XSD fails, we arrive here
-        logger.error(
-            "The CDAR XML file is invalid against the XML Schema Definition")
-        logger.error(f'XSD Error: {str(e)}')
+        logger.error("The CDAR XML file is invalid against the XML Schema Definition")
+        logger.error(f"XSD Error: {str(e)}")
         raise Exception(
             "The CDAR XML file is not valid against the official "
             "XML Schema Definition. "
             "Here is the error, which may give you an idea on the "
-            f"cause of the problem: {str(e)}.")
-    logger.info('CDAR XML file successfully checked against XSD')
+            f"cause of the problem: {str(e)}."
+        )
+    logger.info("CDAR XML file successfully checked against XSD")
 
 
 def _cdar_check_schematron(xml_bytes):
     # TODO add option to pass saxon_proc_and_style
     start_chrono = datetime.datetime.now()
     errors = []
-    xml_str = xml_bytes.decode('utf-8')
-    xml_str_no_bom = xml_str.lstrip('\ufeff')
+    xml_str = xml_bytes.decode("utf-8")
+    xml_str_no_bom = xml_str.lstrip("\ufeff")
     xsl_file = str(importlib_resources.files(__package__).joinpath(CDAR_XSL_FILE))
     with saxonche.PySaxonProcessor() as saxproc:
         xslt_proc = saxproc.new_xslt30_processor()
@@ -786,52 +1000,65 @@ def _cdar_check_schematron(xml_bytes):
         # compile_stylesheet() is the slow/heavy part
         # So, if you pass the compiled stylesheet as argument, it saves a lot of time
         # (about 300 ms on an intel laptop)
-        saxon_compiled_stylesheet = xslt_proc.compile_stylesheet(stylesheet_file=xsl_file)
+        saxon_compiled_stylesheet = xslt_proc.compile_stylesheet(
+            stylesheet_file=xsl_file
+        )
         result_str = saxon_compiled_stylesheet.transform_to_string(xdm_node=xdm_node)
 
     try:
-        svrl_root = etree.fromstring(result_str.encode('utf-8'))
+        svrl_root = etree.fromstring(result_str.encode("utf-8"))
     except Exception as e:
-        logger.error(f"Schematron check generated an invalid XML output. Error: {str(e)}")
-        logger.info('Unable to validate CDAR XML file against schematron')
+        logger.error(
+            f"Schematron check generated an invalid XML output. Error: {str(e)}"
+        )
+        logger.info("Unable to validate CDAR XML file against schematron")
         return False
     xpath_errors = svrl_root.xpath(
-        ".//svrl:successful-report | .//svrl:failed-assert", namespaces=svrl_root.nsmap)
+        ".//svrl:successful-report | .//svrl:failed-assert", namespaces=svrl_root.nsmap
+    )
     error_nr = 1
     for xpath_error in xpath_errors:
-        detail_xpath = xpath_error.xpath("*[local-name() = 'text']", namespaces=svrl_root.nsmap)
+        detail_xpath = xpath_error.xpath(
+            "*[local-name() = 'text']", namespaces=svrl_root.nsmap
+        )
         if detail_xpath:
             error_msg = detail_xpath[0].text and detail_xpath[0].text.strip()
-            error_msg = f'{error_nr}. {error_msg}'
-            location = xpath_error.attrib and xpath_error.attrib.get('location')
+            error_msg = f"{error_nr}. {error_msg}"
+            location = xpath_error.attrib and xpath_error.attrib.get("location")
             if location:
-                error_msg = f'{error_msg}\nError location: {location}'
+                error_msg = f"{error_msg}\nError location: {location}"
             errors.append(error_msg)
             error_nr += 1
 
     if errors:
         logger.error(
-            "The XML file is invalid against the schematron: %d errors found.", len(errors))
+            "The XML file is invalid against the schematron: %d errors found.",
+            len(errors),
+        )
         for error_msg in errors:
             logger.error(error_msg)
-        error_list_str = '\n'.join(errors)
+        error_list_str = "\n".join(errors)
         full_error = (
             f"The Factur-X XML file is not valid against the official "
-            f"schematron. {len(errors)} errors found:\n{error_list_str}")
+            f"schematron. {len(errors)} errors found:\n{error_list_str}"
+        )
         raise Exception(full_error)
     end_chrono = datetime.datetime.now()
     logger.info(
-        'CDAR XML file successfully validated against schematron in %s sec',
-        (end_chrono - start_chrono).total_seconds())
+        "CDAR XML file successfully validated against schematron in %s sec",
+        (end_chrono - start_chrono).total_seconds(),
+    )
 
 
 def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     if not xml_bytes:
         raise ValueError("xml_bytes argument has no value")
     if isinstance(xml_bytes, str):
-        xml_bytes = xml_bytes.encode('utf-8')
+        xml_bytes = xml_bytes.encode("utf-8")
     if not isinstance(xml_bytes, bytes):
-        raise ValueError(f"xml_bytes argument is a {type(xml_bytes)}, it must be a bytes")
+        raise ValueError(
+            f"xml_bytes argument is a {type(xml_bytes)}, it must be a bytes"
+        )
     try:
         xml_root = etree.fromstring(xml_bytes)
     except Exception as e:
@@ -841,32 +1068,34 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     if check_schematron:
         _cdar_check_schematron(xml_bytes)
     exch_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:ExchangedDocument"
-    ack_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:AcknowledgementDocument"
+    ack_doc_xp = (
+        "//rsm:CrossDomainAcknowledgementAndResponse/rsm:AcknowledgementDocument"
+    )
     ref_doc_xp = f"{ack_doc_xp}/ram:ReferenceReferencedDocument"
     doc_status_xp = f"{ref_doc_xp}/ram:SpecifiedDocumentStatus"
     doc_characteristics_rel_xp = "ram:SpecifiedDocumentCharacteristic"
     attach_xp = f"{ref_doc_xp}/ram:AttachmentBinaryObject"
     xpath_dict = {
-        'MDT-87': f"{ref_doc_xp}/ram:IssuerAssignedID",
+        "MDT-87": f"{ref_doc_xp}/ram:IssuerAssignedID",
         "MDT-105": f"{ref_doc_xp}/ram:ProcessConditionCode",
         "MDT-106": f"{ref_doc_xp}/ram:ProcessCondition",
         "MDT-8": f"{exch_doc_xp}/ram:IssueDateTime/udt:DateTimeString",
-        }
+    }
     doc_status_xpath_dict = {
         "MDT-113": "ram:ReasonCode",
         "MDT-114": "ram:Reason",
         "MDT-121": "ram:RequestedActionCode",
         "MDT-122": "ram:RequestedAction",
         "MDT-126": "ram:IncludedNote/ram:Content",
-        }
+    }
     doc_characteristics_xpath_dict = {
         "MDT-207": "ram:TypeCode",
         "MDT-209": "ram:ValueChangedIndicator/udt:IndicatorString",
         "MDT-215": "ram:ValueAmount",
         "MDT-219": "ram:ValueDateTime/udt:DateTimeString",
-        }
+    }
 
-    res = {'MDG-37': [], "MDT-96": []}
+    res = {"MDG-37": [], "MDT-96": []}
     namespaces = xml_root.nsmap
     if None in namespaces:
         namespaces.pop(None)
@@ -883,43 +1112,55 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
             value = _xpath_get_value(xpath, doc_status, namespaces)
             if value is not None:
                 doc_status_dict[key] = value
-        for doc_characteristic in doc_status.xpath(doc_characteristics_rel_xp, namespaces=namespaces):
+        for doc_characteristic in doc_status.xpath(
+            doc_characteristics_rel_xp, namespaces=namespaces
+        ):
             doc_characteristic_dict = {}
             for key, xpath in doc_characteristics_xpath_dict.items():
                 value = _xpath_get_value(xpath, doc_characteristic, namespaces)
                 if value is not None:
                     doc_characteristic_dict[key] = value
             doc_status_dict["MDG-43"].append(doc_characteristic_dict)
-        res['MDG-37'].append(doc_status_dict)
+        res["MDG-37"].append(doc_status_dict)
     for attach in xml_root.xpath(attach_xp, namespaces=namespaces):
         if attach.text:
-            if attach.attrib and attach.attrib.get('filename'):
-                filename = attach.attrib['filename']
+            if attach.attrib and attach.attrib.get("filename"):
+                filename = attach.attrib["filename"]
             else:
                 filename = "unknwon_filename.bin"
             avals = {
-                'bin': base64.b64decode(attach.text),
-                'filename': filename,
-                }
-            if attach.attrib and attach.attrib.get('mimeCode'):
-                avals['mime_type'] = attach.attrib['mimeCode']
-            res['MDT-96'].append(avals)
+                "bin": base64.b64decode(attach.text),
+                "filename": filename,
+            }
+            if attach.attrib and attach.attrib.get("mimeCode"):
+                avals["mime_type"] = attach.attrib["mimeCode"]
+            res["MDT-96"].append(avals)
     return res
 
 
 def _xpath_get_value(xpath, node, namespaces):
     date_fmt = {
-        "102": '%Y%m%d',
-        "204": '%Y%m%d%H%M%S',
-        }
+        "102": "%Y%m%d",
+        "204": "%Y%m%d%H%M%S",
+    }
     xpath_res = node.xpath(xpath, namespaces=namespaces)
     value = None
     if xpath_res and xpath_res[0].text:
         value = xpath_res[0].text and xpath_res[0].text.strip()
-        if value and xpath.endswith(':DateTimeString') and xpath_res[0].attrib and xpath_res[0].attrib.get("format") in date_fmt:
-            value = datetime.datetime.strptime(value, date_fmt[xpath_res[0].attrib["format"]])
+        if (
+            value
+            and xpath.endswith(":DateTimeString")
+            and xpath_res[0].attrib
+            and xpath_res[0].attrib.get("format") in date_fmt
+        ):
+            value = datetime.datetime.strptime(
+                value, date_fmt[xpath_res[0].attrib["format"]]
+            )
         if value and xpath_res[0].attrib and xpath_res[0].attrib.get("currencyID"):
-            value = {'float': float(value), 'currency': xpath_res[0].attrib['currencyID']}
+            value = {
+                "float": float(value),
+                "currency": xpath_res[0].attrib["currencyID"],
+            }
     return value
 
 
@@ -927,8 +1168,7 @@ def _map_nested_keys(data, key_map):
     """Recursively updates keys in a dictionary based on a mapping dictionary"""
     if isinstance(data, dict):
         return {
-            key_map.get(k, k): _map_nested_keys(v, key_map)
-            for k, v in data.items()
+            key_map.get(k, k): _map_nested_keys(v, key_map) for k, v in data.items()
         }
     elif isinstance(data, list):
         return [_map_nested_keys(item, key_map) for item in data]
@@ -937,10 +1177,12 @@ def _map_nested_keys(data, key_map):
 
 
 def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
-    raw_res = parse_cdar_raw(xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron)
+    raw_res = parse_cdar_raw(
+        xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron
+    )
     key_map = {
-        'MDT-87': "invoice_number",
-        'MDT-96': "attachments",
+        "MDT-87": "invoice_number",
+        "MDT-96": "attachments",
         "MDT-105": "status_code",
         "MDT-106": "status_name",
         "MDT-8": "lc_datetime",
@@ -954,38 +1196,53 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
         "MDT-219": "date",
         "MDG-37": "doc_status",
         "MDG-43": "doc_characteristics",
-        }
+    }
     res = _map_nested_keys(raw_res, key_map)
     return res
 
 
 def _parse_flow_dict(flow_dict):
     state_map = {  # key = AFNOR vals ; values = our keys
-        'Pending': 'pending',
-        'Ok': 'done',
-        'Error': 'error',
-        }
+        "Pending": "pending",
+        "Ok": "done",
+        "Error": "error",
+    }
     direction_map = {
-        'In': 'in',
-        'Out': 'out',
-        }
-    if flow_dict.get('submittedAt'):
-        flow_dict['submitted_at'] = _timestamp_iso8601_to_utc_datetime(flow_dict['submittedAt'])
-    if flow_dict.get('updatedAt'):
-        flow_dict['updated_at'] = _timestamp_iso8601_to_utc_datetime(flow_dict['updatedAt'])
-    if flow_dict.get('acknowledgement'):
-        if flow_dict['acknowledgement'].get('status'):
-            flow_dict['state'] = state_map.get(flow_dict['acknowledgement']['status'], 'ap_unknown')
-        if flow_dict['acknowledgement'].get('details') and isinstance(flow_dict['acknowledgement']['details'], list):
+        "In": "in",
+        "Out": "out",
+    }
+    if flow_dict.get("submittedAt"):
+        flow_dict["submitted_at"] = _timestamp_iso8601_to_utc_datetime(
+            flow_dict["submittedAt"]
+        )
+    if flow_dict.get("updatedAt"):
+        flow_dict["updated_at"] = _timestamp_iso8601_to_utc_datetime(
+            flow_dict["updatedAt"]
+        )
+    if flow_dict.get("acknowledgement"):
+        if flow_dict["acknowledgement"].get("status"):
+            flow_dict["state"] = state_map.get(
+                flow_dict["acknowledgement"]["status"], "ap_unknown"
+            )
+        if flow_dict["acknowledgement"].get("details") and isinstance(
+            flow_dict["acknowledgement"]["details"], list
+        ):
             messages = []
-            for detail in flow_dict['acknowledgement']['details']:
+            for detail in flow_dict["acknowledgement"]["details"]:
                 # the 4 fields are required, so the IF condition should always be ok
-                if detail.get('item') and detail.get('level') and detail.get('reasonCode') and detail.get('reasonMessage'):
+                if (
+                    detail.get("item")
+                    and detail.get("level")
+                    and detail.get("reasonCode")
+                    and detail.get("reasonMessage")
+                ):
                     msg = f"{detail['level']} on {detail['item']}: {detail['reasonMessage']} (code: {detail['reasonCode']})"
                     messages.append(msg)
-            flow_dict['ap_error_details'] = '\n'.join(messages) or False
-    if flow_dict.get('flowDirection'):
-        flow_dict['flow_direction'] = direction_map.get(flow_dict['flowDirection'], flow_dict['flowDirection'])
+            flow_dict["ap_error_details"] = "\n".join(messages) or False
+    if flow_dict.get("flowDirection"):
+        flow_dict["flow_direction"] = direction_map.get(
+            flow_dict["flowDirection"], flow_dict["flowDirection"]
+        )
 
 
 def _timestamp_iso8601_to_utc_datetime(timestamp):
