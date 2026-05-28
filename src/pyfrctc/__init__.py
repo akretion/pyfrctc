@@ -1,6 +1,8 @@
 __version__ = "0.6"
 from .pyfrctc import (
+    authorization_code_first_token,
     generate_cdar,
+    get_authorization_url,
     get_directory_lines,
     get_directory_lines_parsed,
     get_directory_siren,
@@ -9,6 +11,7 @@ from .pyfrctc import (
     get_directory_siret_parsed,
     get_flow,
     get_flow_metadata_parsed,
+    get_session,
     healthcheck,
     parse_cdar,
     parse_cdar_raw,
@@ -19,7 +22,9 @@ from .pyfrctc import (
 )
 
 __all__ = [
+    "authorization_code_first_token",
     "generate_cdar",
+    "get_authorization_url",
     "get_directory_lines",
     "get_directory_lines_parsed",
     "get_directory_siren",
@@ -28,6 +33,7 @@ __all__ = [
     "get_directory_siret_parsed",
     "get_flow",
     "get_flow_metadata_parsed",
+    "get_session",
     "healthcheck",
     "parse_cdar",
     "parse_cdar_raw",
