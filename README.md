@@ -16,30 +16,38 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
-* version 0.1 dated 2026-04-22
+* version 0.7 dated 2026-05-28 ([OCA code sprint in Santander](https://www.aeodoo.org/event/spanish-oca-days-2026-143/page/introduccion-spanish-oca-days-2026))
 
-  *  initial release
-
-* version 0.2 dated 2026-04-23
-
-  * Fixes in re-formatting of directory lines for B2G when SIRET has specific global properties
-
-* version 0.3 dated 2026-04-30
-
-  * Add methods send\_flow\_parsed(), search\_flows\_parsed() and get\_flow\_metadata\_parsed()
-  * Add multi-page support in search\_flows()
-
-* version 0.4 dated 2026-05-14
-
-  * Add methods to generate and parse CDAR XML files for life cycle
-
-* version 0.5 dated 2026-05-15
-
-  * Add support for MDT-96 in CDAR XML for generation and parsing
-  * rename keys doc\_status and doc\_characteristics to their designation in the standard (MDG-37 and MDG-43)
+  * Restore method get\_session()
+  * Add two new methods authorization\_code\_first\_token() and get\_authorization\_url()
+  * Code reformatting for better readability
 
 * version 0.6 dated 2026-05-21
 
   * Remove method get\_session()
   * Method search\_flows\_parsed() accepts flow\_direction argument with only lowercase letters
   * Methods search\_flow\_parsed(), get\_flow\_metadata\_parsed() and send\_flow\_parsed() returnd an additionnal key **flow_direction** in the flow with value in lowercase letters.
+
+* version 0.5 dated 2026-05-15
+
+  * Add support for MDT-96 in CDAR XML for generation and parsing
+  * rename keys doc\_status and doc\_characteristics to their designation in the standard (MDG-37 and MDG-43)
+
+* version 0.4 dated 2026-05-14
+
+  * Add methods to generate and parse CDAR XML files for life cycle
+
+* version 0.3 dated 2026-04-30
+
+  * Add methods send\_flow\_parsed(), search\_flows\_parsed() and get\_flow\_metadata\_parsed()
+  * Add multi-page support in search\_flows()
+
+* version 0.2 dated 2026-04-23
+
+  * Fixes in re-formatting of directory lines for B2G when SIRET has specific global properties
+
+* version 0.1 dated 2026-04-22
+
+  *  initial release
+
+
