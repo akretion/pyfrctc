@@ -1084,16 +1084,22 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
             RAM.IssueDateTime(UDT.DateTimeString(data_dict["MDT-8"], format="204")),
             RAM.SenderTradeParty(RAM.RoleCode(data_dict["MDT-21"])),
             RAM.IssuerTradeParty(
-                RAM.GlobalID(data_dict["MDT-38"], schemeID="0002"),
+                *[
+                    RAM.GlobalID(global_id, schemeID=schemeID)
+                    for (schemeID, global_id) in data_dict["MDT-38"].items()
+                ],
                 RAM.Name(data_dict["MDT-39"]),
                 RAM.RoleCode(data_dict["MDT-40"]),
             ),
             RAM.RecipientTradeParty(
-                RAM.GlobalID(data_dict["MDT-57"], schemeID="0002"),
+                *[
+                    RAM.GlobalID(global_id, schemeID=schemeID)
+                    for (schemeID, global_id) in data_dict["MDT-57"].items()
+                ],
                 RAM.Name(data_dict["MDT-58"]),
                 RAM.RoleCode(data_dict["MDT-59"]),
                 RAM.URIUniversalCommunication(
-                    RAM.URIID(data_dict["MDT-73"], schemeID="0225")
+                    RAM.URIID(data_dict["MDT-73"], schemeID=data_dict["MDT-73-1"])
                 ),
             ),
         ),
@@ -1132,7 +1138,10 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
                 RAM.ProcessConditionCode(data_dict["MDT-105"]),
                 RAM.ProcessCondition(data_dict["MDT-106"]),
                 RAM.IssuerTradeParty(
-                    RAM.GlobalID(data_dict["MDT-129"], schemeID="0002")
+                    *[
+                        RAM.GlobalID(global_id, schemeID=schemeID)
+                        for (schemeID, global_id) in data_dict["MDT-129"].items()
+                    ]
                 ),
                 *[
                     RAM.SpecifiedDocumentStatus(
@@ -1330,6 +1339,7 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     attach_xp = f"{ref_doc_xp}/ram:AttachmentBinaryObject"
     xpath_dict = {
         "MDT-87": f"{ref_doc_xp}/ram:IssuerAssignedID",
+        "MDT-129": f"{ref_doc_xp}/ram:IssuerTradeParty/ram:GlobalID",
         "MDT-105": f"{ref_doc_xp}/ram:ProcessConditionCode",
         "MDT-106": f"{ref_doc_xp}/ram:ProcessCondition",
         "MDT-8": f"{exch_doc_xp}/ram:IssueDateTime/udt:DateTimeString",
@@ -1397,24 +1407,38 @@ def _xpath_get_value(xpath, node, namespaces):
         "204": "%Y%m%d%H%M%S",
     }
     xpath_res = node.xpath(xpath, namespaces=namespaces)
-    value = None
-    if xpath_res and xpath_res[0].text:
-        value = xpath_res[0].text and xpath_res[0].text.strip()
-        if (
-            value
-            and xpath.endswith(":DateTimeString")
-            and xpath_res[0].attrib
-            and xpath_res[0].attrib.get("format") in date_fmt
-        ):
-            value = datetime.datetime.strptime(
-                value, date_fmt[xpath_res[0].attrib["format"]]
-            )
-        if value and xpath_res[0].attrib and xpath_res[0].attrib.get("currencyID"):
-            value = {
-                "float": float(value),
-                "currency": xpath_res[0].attrib["currencyID"],
-            }
-    return value
+    values = []
+    for xpath_entry in xpath_res:
+        if xpath_entry.text:
+            value = xpath_entry.text and xpath_entry.text.strip()
+            if (
+                value
+                and xpath.endswith(":DateTimeString")
+                and xpath_entry.attrib
+                and xpath_entry.attrib.get("format") in date_fmt
+            ):
+                value = datetime.datetime.strptime(
+                    value, date_fmt[xpath_entry.attrib["format"]]
+                )
+            elif value and xpath_entry.attrib and xpath_entry.attrib.get("currencyID"):
+                value = {
+                    "float": float(value),
+                    "currency": xpath_res[0].attrib["currencyID"],
+                }
+            elif value and xpath_entry.attrib and xpath_entry.attrib.get("schemeID"):
+                value = {
+                    "schemeID": xpath_entry.attrib["schemeID"],
+                    "text": value,
+                }
+            if value:
+                values.append(value)
+    if not values:
+        values = None
+    elif isinstance(values[0], dict) and "schemeID" in values[0]:
+        values = {x["schemeID"]: x["text"] for x in values}
+    elif len(values) == 1:
+        values = values[0]
+    return values
 
 
 def _map_nested_keys(data, key_map):
@@ -1435,6 +1459,7 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
     )
     key_map = {
         "MDT-87": "invoice_number",
+        "MDT-129": "invoice_issuer",
         "MDT-96": "attachments",
         "MDT-105": "status_code",
         "MDT-106": "status_name",

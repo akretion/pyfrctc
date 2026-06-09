@@ -16,6 +16,11 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.9 dated 2026-06-09
+
+  * Add support for MDT-129 in parse\_cdar() and parse\_cdar\_raw()
+  * in generate\_cdar(), schemeID attributes are not hard-coded any more. Support for several SchemeIDs for GlobalID nodes
+
 * version 0.8 dated 2026-06-09
 
   * search\_flows\_parsed() now accepts updated\_after as datetime object (timezone aware or timezone naive as UTC)
