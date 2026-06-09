@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.8 dated 2026-06-09
+
+  * search\_flows\_parsed() now accepts updated\_after as datetime object (timezone aware or timezone naive as UTC)
+
 * version 0.7 dated 2026-05-28 ([OCA code sprint in Santander](https://www.aeodoo.org/event/spanish-oca-days-2026-143/page/introduccion-spanish-oca-days-2026))
 
   * Restore method get\_session()
@@ -49,5 +53,3 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 * version 0.1 dated 2026-04-22
 
   *  initial release
-
-
