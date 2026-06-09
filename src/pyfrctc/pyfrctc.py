@@ -861,7 +861,14 @@ def search_flows(
         raise ValueError("session argument has no value")
     if not updated_after:
         raise ValueError("updated_after argument must have a value")
-    # TODO add check for updated_after ?
+    if not isinstance(updated_after, str):
+        raise ValueError("updated_after argument must be a timestamp as string")
+    if not updated_after.endswith("Z"):
+        raise ValueError(
+            "updated_after argument must be a timestamp as string in UTC, "
+            "so it should end with 'Z'"
+        )
+
     if flow_direction:
         if isinstance(flow_direction, str):
             flow_direction = [flow_direction]
@@ -970,6 +977,15 @@ def search_flows_parsed(
         flow_direction = flow_direction.capitalize()
     elif isinstance(flow_direction, list):
         flow_direction = [x.capitalize() for x in flow_direction]
+    if isinstance(updated_after, datetime.datetime):
+        if updated_after.tzinfo:  # tz aware
+            updated_after_utc_aware = updated_after.astimezone(pytz.utc)
+        else:  # tz naive, we suppose it is UTC
+            updated_after_utc_aware = pytz.utc.localize(updated_after)
+        updated_after = updated_after_utc_aware.isoformat(timespec="milliseconds")
+        if updated_after.endswith("+00:00"):
+            updated_after = f"{updated_after[:-6]}Z"
+        logger.debug(f"updated_after converted to string: {updated_after}")
     res = search_flows(
         session, updated_after, flow_direction, flow_type, updated_before=updated_before
     )
