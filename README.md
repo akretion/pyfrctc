@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.10 dated 2026-06-11
+
+  * \_parse\_flow\_dict(): when AP returns 'Pending', the lib will return 'sent'
+
 * version 0.9 dated 2026-06-09
 
   * Add support for MDT-129 in parse\_cdar() and parse\_cdar\_raw()

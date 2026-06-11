@@ -1481,7 +1481,7 @@ def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
 
 def _parse_flow_dict(flow_dict):
     state_map = {  # key = AFNOR vals ; values = our keys
-        "Pending": "pending",
+        "Pending": "sent",
         "Ok": "done",
         "Error": "error",
     }
