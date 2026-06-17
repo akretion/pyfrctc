@@ -745,7 +745,7 @@ def get_directory_lines_parsed(
                     "because the public entity has service required"
                 )
                 state = "disabled"
-            expected_identifier = f"{siren}_{siret}"
+            expected_identifier = f"{siren}_{dir_siret}"
         else:
             type = "siren"
             expected_identifier = siren
