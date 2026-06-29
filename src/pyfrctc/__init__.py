@@ -1,4 +1,4 @@
-__version__ = "0.6"
+__version__ = "0.11"
 from .pyfrctc import (
     authorization_code_first_token,
     generate_cdar,

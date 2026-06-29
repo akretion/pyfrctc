@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.11 dated 2026-06-29
+
+  * new boolean named argument **prefixed_namespaces** in **generate_cdar()** to either generate prefixed namespaces (default) or default namespaces
+
 * version 0.10 dated 2026-06-11
 
   * \_parse\_flow\_dict(): when AP returns 'Pending', the lib will return 'sent'

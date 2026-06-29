@@ -1062,14 +1062,38 @@ def get_flow_metadata_parsed(session, flow_id):
     return flow_dict
 
 
-def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
+def generate_cdar(
+    data_dict, check_xsd=True, check_schematron=True, prefixed_namespaces=True
+):
     """Generate CDAR XML file for life cycle"""
-    RSM = objectify.ElementMaker(
-        namespace=CDAR_NS_MAP["rsm"], nsmap=CDAR_NS_MAP, annotate=False
-    )
-    RAM = objectify.ElementMaker(namespace=CDAR_NS_MAP["ram"], annotate=False)
-    UDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["udt"], annotate=False)
-    QDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["qdt"], annotate=False)
+    if prefixed_namespaces:
+        RSM = objectify.ElementMaker(
+            namespace=CDAR_NS_MAP["rsm"], nsmap=CDAR_NS_MAP, annotate=False
+        )
+        RAM = objectify.ElementMaker(namespace=CDAR_NS_MAP["ram"], annotate=False)
+        UDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["udt"], annotate=False)
+        QDT = objectify.ElementMaker(namespace=CDAR_NS_MAP["qdt"], annotate=False)
+    else:
+        RSM = objectify.ElementMaker(
+            namespace=CDAR_NS_MAP["rsm"],
+            nsmap={None: CDAR_NS_MAP["rsm"]},
+            annotate=False,
+        )
+        RAM = objectify.ElementMaker(
+            namespace=CDAR_NS_MAP["ram"],
+            nsmap={None: CDAR_NS_MAP["ram"]},
+            annotate=False,
+        )
+        UDT = objectify.ElementMaker(
+            namespace=CDAR_NS_MAP["udt"],
+            nsmap={None: CDAR_NS_MAP["udt"]},
+            annotate=False,
+        )
+        QDT = objectify.ElementMaker(
+            namespace=CDAR_NS_MAP["qdt"],
+            nsmap={None: CDAR_NS_MAP["qdt"]},
+            annotate=False,
+        )
 
     root = RSM.CrossDomainAcknowledgementAndResponse(
         RSM.ExchangedDocumentContext(
@@ -1218,7 +1242,6 @@ def generate_cdar(data_dict, check_xsd=True, check_schematron=True):
     xml_bytes = etree.tostring(
         root, pretty_print=True, xml_declaration=True, encoding="UTF-8"
     )
-    # verif schema => faire comme lib fx
     if check_xsd:
         _cdar_check_xsd(xml_bytes)
     if check_schematron:
