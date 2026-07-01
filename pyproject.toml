@@ -24,7 +24,7 @@ dependencies = [
   "python-stdnum >= 1.20",
   "lxml",
   "pytz",
-  "dateutil",
+  "python-dateutil",
 ]
 requires-python = ">=3.9"
 dynamic = ["version"]
