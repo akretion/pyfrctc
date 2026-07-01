@@ -12,6 +12,7 @@ import logging
 import secrets
 import time
 from io import BytesIO
+from dateutil import parser
 from urllib.parse import urlencode
 
 import pytz
@@ -1554,7 +1555,7 @@ def _timestamp_iso8601_to_utc_datetime(timestamp):
         raise ValueError("timestamp argument has no value")
     if not isinstance(timestamp, str):
         raise ValueError("timestamp argument must be a string")
-    timestamp_dt = datetime.datetime.fromisoformat(timestamp)
+    timestamp_dt = parser.isoparse(timestamp)
     # switch to UTC
     timestamp_dt_utc = timestamp_dt.astimezone(pytz.utc)
     timestamp_dt_utc_naive = timestamp_dt_utc.replace(tzinfo=None)
