@@ -12,11 +12,11 @@ import logging
 import secrets
 import time
 from io import BytesIO
-from dateutil import parser
 from urllib.parse import urlencode
 
 import pytz
-import saxonche
+import requests
+from dateutil import parser
 from lxml import etree, objectify
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
@@ -26,10 +26,7 @@ from stdnum.fr.siret import is_valid as siret_is_valid
 # from pprint import pprint
 
 VERSION = importlib.metadata.version("pyfrctc")
-FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
-logging.basicConfig(format=FORMAT)
 logger = logging.getLogger("pyfrctc")
-logger.setLevel(logging.INFO)
 
 PLATFORMS = {
     "superpdp": {
@@ -53,6 +50,10 @@ CDAR_NS_MAP = {
     "CrossDomainAcknowledgementAndResponse:100",
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
+# Saxon server available from https://github.com/willemvlh/saxon-server
+# We stopped using saxonche because of https://github.com/akretion/pyfrctc/issues/3
+SAXON_SERVER_DEFAULT_URL = "http://localhost:5000/transform"
+SAXON_SERVER_TIMEOUT = 5
 
 
 def _get_plateform(session):
@@ -1064,7 +1065,11 @@ def get_flow_metadata_parsed(session, flow_id):
 
 
 def generate_cdar(
-    data_dict, check_xsd=True, check_schematron=True, prefixed_namespaces=True
+    data_dict,
+    check_xsd=True,
+    check_schematron=False,
+    saxon_server_url=None,
+    prefixed_namespaces=True,
 ):
     """Generate CDAR XML file for life cycle"""
     if prefixed_namespaces:
@@ -1244,13 +1249,13 @@ def generate_cdar(
         root, pretty_print=True, xml_declaration=True, encoding="UTF-8"
     )
     if check_xsd:
-        _cdar_check_xsd(xml_bytes)
+        check_cdar_xsd(xml_bytes)
     if check_schematron:
-        _cdar_check_schematron(xml_bytes)
+        check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
     return xml_bytes
 
 
-def _cdar_check_xsd(xml_bytes):
+def check_cdar_xsd(xml_bytes):
     xsd_absolute_filepath = importlib.resources.files(__package__).joinpath(
         CDAR_XSD_FILE
     )
@@ -1272,24 +1277,49 @@ def _cdar_check_xsd(xml_bytes):
     logger.info("CDAR XML file successfully checked against XSD")
 
 
-def _cdar_check_schematron(xml_bytes):
-    # TODO add option to pass saxon_proc_and_style
+def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=False):
+    if not isinstance(saxon_server_url, (type(None), str)):
+        raise ValueError("saxon_server_url argument must be a string or None")
+    url = saxon_server_url
+    if url is None:
+        url = SAXON_SERVER_DEFAULT_URL
     start_chrono = datetime.datetime.now()
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
     xsl_file_path = importlib.resources.files(__package__).joinpath(CDAR_XSL_FILE)
-    xsl_file_path_str = str(xsl_file_path)
-    with saxonche.PySaxonProcessor() as saxproc:
-        xslt_proc = saxproc.new_xslt30_processor()
-        xdm_node = saxproc.parse_xml(xml_text=xml_str_no_bom)
-        # compile_stylesheet() is the slow/heavy part
-        # So, if you pass the compiled stylesheet as argument, it saves a lot of time
-        # (about 300 ms on an intel laptop)
-        saxon_compiled_stylesheet = xslt_proc.compile_stylesheet(
-            stylesheet_file=xsl_file_path_str
+    xsl_file_str = xsl_file_path.read_text(encoding="utf-8")
+
+    rfiles = {
+        "xml": ("cdar_file.xml", xml_str_no_bom, "text/xml"),
+        "xsl": ("cdar_schematron.xsl", xsl_file_str, "text/xml"),
+    }
+    logger.info(
+        f"Sending HTTP POST request on {url} to validate against CDAR schematron"
+    )
+    try:
+        res = requests.post(url, files=rfiles, timeout=SAXON_SERVER_TIMEOUT)
+    except Exception as err:
+        error_msg = f"Failure in the POST request to saxon server on {url}: {str(err)}"
+        logger.warning(error_msg)
+        if raise_if_http_error:
+            raise RuntimeError(error_msg) from err
+        logger.warning("Skipping CDAR schematron check")
+        return
+
+    if res.status_code != 200:
+        error_msg = (
+            f"Saxon server returned HTTP code {res.status_code} "
+            "(expected HTTP code: 200)"
         )
-        result_str = saxon_compiled_stylesheet.transform_to_string(xdm_node=xdm_node)
+        logger.warning(error_msg)
+        if raise_if_http_error:
+            raise RuntimeError(error_msg)
+        logger.warning("Skipping CDAR schematron check")
+        return
+    logger.info("Saxon server answered successfully")
+    result_str = res.text
+    logger.debug("schematron result_str=%s", result_str)
 
     try:
         svrl_root = etree.fromstring(result_str.encode("utf-8"))
@@ -1336,7 +1366,9 @@ def _cdar_check_schematron(xml_bytes):
     )
 
 
-def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
+def parse_cdar_raw(
+    xml_bytes, check_xsd=True, check_schematron=False, saxon_server_url=None
+):
     if not xml_bytes:
         raise ValueError("xml_bytes argument has no value")
     if isinstance(xml_bytes, str):
@@ -1350,9 +1382,9 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     except Exception as e:
         raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}") from e
     if check_xsd:
-        _cdar_check_xsd(xml_bytes)
+        check_cdar_xsd(xml_bytes)
     if check_schematron:
-        _cdar_check_schematron(xml_bytes)
+        check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
     exch_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:ExchangedDocument"
     ack_doc_xp = (
         "//rsm:CrossDomainAcknowledgementAndResponse/rsm:AcknowledgementDocument"
@@ -1477,9 +1509,14 @@ def _map_nested_keys(data, key_map):
         return data
 
 
-def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
+def parse_cdar(
+    xml_bytes, check_xsd=True, check_schematron=False, saxon_server_url=None
+):
     raw_res = parse_cdar_raw(
-        xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron
+        xml_bytes,
+        check_xsd=check_xsd,
+        check_schematron=check_schematron,
+        saxon_server_url=saxon_server_url,
     )
     key_map = {
         "MDT-87": "invoice_number",
