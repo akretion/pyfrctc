@@ -1,6 +1,11 @@
 import logging
 
-__version__ = "0.11"
+__version__ = "0.12"
+from .ereporting import (
+    check_ereporting_xsd,
+    generate_ereporting_payments,
+    generate_ereporting_transactions,
+)
 from .pyfrctc import (
     authorization_code_first_token,
     check_cdar_schematron,
@@ -47,6 +52,9 @@ __all__ = [
     "search_flows_parsed",
     "send_flow",
     "send_flow_parsed",
+    "generate_ereporting_transactions",
+    "generate_ereporting_payments",
+    "check_ereporting_xsd",
 ]
 
 
