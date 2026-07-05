@@ -1285,18 +1285,14 @@ def _format_datetime_204(date_time):
 
 def _check_xsd(xml_to_check, xsd_file, file_type):
     if isinstance(xml_to_check, (bytes, str)):
-        if isinstance(xml_to_check, str):
-            xml_bytes = xml_to_check.encode("utf-8")
-        else:
-            xml_bytes = xml_to_check
         try:
-            xml_root = etree.parse(BytesIO(xml_bytes))
+            xml_etree = etree.fromstring(xml_to_check)
         except Exception as err:
             raise Exception(
                 f"The {file_type} file is not a valid XML file. Error: {err}"
             ) from err
     elif isinstance(xml_to_check, type(etree.Element("pouet"))):
-        xml_root = xml_to_check
+        xml_etree = xml_to_check
     else:
         raise ValueError(
             "The first argument must be a bytes, string or an XML etree object"
@@ -1305,7 +1301,7 @@ def _check_xsd(xml_to_check, xsd_file, file_type):
     logger.debug(f"Using {file_type} XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
     try:
-        official_schema.assertValid(xml_root)
+        official_schema.assertValid(xml_etree)
     except Exception as err:
         # if the validation of the XSD fails, we arrive here
         logger.error(
@@ -1430,7 +1426,7 @@ def parse_cdar_raw(
     except Exception as e:
         raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}") from e
     if check_xsd:
-        check_cdar_xsd(xml_bytes)
+        check_cdar_xsd(xml_root)
     if check_schematron:
         check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
     exch_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:ExchangedDocument"
