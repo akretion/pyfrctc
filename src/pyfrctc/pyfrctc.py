@@ -1285,8 +1285,12 @@ def _format_datetime_204(date_time):
 
 def _check_xsd(xml_to_check, xsd_file, file_type):
     if isinstance(xml_to_check, (bytes, str)):
+        if isinstance(xml_to_check, str):
+            xml_bytes = xml_to_check.encode("utf-8")
+        else:
+            xml_bytes = xml_to_check
         try:
-            xml_root = etree.parse(BytesIO(xml_to_check))
+            xml_root = etree.parse(BytesIO(xml_bytes))
         except Exception as err:
             raise Exception(
                 f"The {file_type} file is not a valid XML file. Error: {err}"
