@@ -12,11 +12,11 @@ import logging
 import secrets
 import time
 from io import BytesIO
-from dateutil import parser
 from urllib.parse import urlencode
 
 import pytz
-import saxonche
+import requests
+from dateutil import parser
 from lxml import etree, objectify
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
@@ -26,10 +26,7 @@ from stdnum.fr.siret import is_valid as siret_is_valid
 # from pprint import pprint
 
 VERSION = importlib.metadata.version("pyfrctc")
-FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
-logging.basicConfig(format=FORMAT)
 logger = logging.getLogger("pyfrctc")
-logger.setLevel(logging.INFO)
 
 PLATFORMS = {
     "superpdp": {
@@ -53,6 +50,15 @@ CDAR_NS_MAP = {
     "CrossDomainAcknowledgementAndResponse:100",
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
+CDAR_DATE_FMT = {
+    "102": "%Y%m%d",
+    "204": "%Y%m%d%H%M%S",
+}
+
+# Saxon server available from https://github.com/willemvlh/saxon-server
+# We stopped using saxonche because of https://github.com/akretion/pyfrctc/issues/3
+SAXON_SERVER_DEFAULT_URL = "http://localhost:5000/transform"
+SAXON_SERVER_TIMEOUT = 5
 
 
 def _get_plateform(session):
@@ -1064,7 +1070,11 @@ def get_flow_metadata_parsed(session, flow_id):
 
 
 def generate_cdar(
-    data_dict, check_xsd=True, check_schematron=True, prefixed_namespaces=True
+    data_dict,
+    check_xsd=True,
+    check_schematron=False,
+    saxon_server_url=None,
+    prefixed_namespaces=True,
 ):
     """Generate CDAR XML file for life cycle"""
     if prefixed_namespaces:
@@ -1106,7 +1116,11 @@ def generate_cdar(
         RSM.ExchangedDocument(
             RAM.ID(data_dict["MDT-4"]),
             *[RAM.Name(data_dict["MDT-5"]) for _ in [1] if "MDT-5" in data_dict],
-            RAM.IssueDateTime(UDT.DateTimeString(data_dict["MDT-8"], format="204")),
+            RAM.IssueDateTime(
+                UDT.DateTimeString(
+                    _format_datetime_204(data_dict["MDT-8"]), format="204"
+                )
+            ),
             RAM.SenderTradeParty(RAM.RoleCode(data_dict["MDT-21"])),
             RAM.IssuerTradeParty(
                 *[
@@ -1133,7 +1147,11 @@ def generate_cdar(
                 UDT.Indicator(str(data_dict["MDT-74"]).lower())
             ),
             RAM.TypeCode(str(data_dict["MDT-77"])),
-            RAM.IssueDateTime(UDT.DateTimeString(data_dict["MDT-78"], format="204")),
+            RAM.IssueDateTime(
+                UDT.DateTimeString(
+                    _format_datetime_204(data_dict["MDT-78"]), format="204"
+                )
+            ),
             RAM.ReferenceReferencedDocument(
                 RAM.IssuerAssignedID(data_dict["MDT-87"]),
                 *[
@@ -1144,7 +1162,9 @@ def generate_cdar(
                 RAM.TypeCode(data_dict["MDT-91"]),
                 *[
                     RAM.ReceiptDateTime(
-                        UDT.DateTimeString(data_dict["MDT-95"], format="204")
+                        UDT.DateTimeString(
+                            _format_datetime_204(data_dict["MDT-95"]), format="204"
+                        )
                     )
                     for _ in [1]
                     if "MDT-95" in data_dict
@@ -1158,7 +1178,9 @@ def generate_cdar(
                     for attach in data_dict.get("MDT-96", [])
                 ],
                 RAM.FormattedIssueDateTime(
-                    QDT.DateTimeString(data_dict["MDT-100"], format="102")
+                    QDT.DateTimeString(
+                        _format_date_102(data_dict["MDT-100"]), format="102"
+                    )
                 ),
                 RAM.ProcessConditionCode(data_dict["MDT-105"]),
                 RAM.ProcessCondition(data_dict["MDT-106"]),
@@ -1224,11 +1246,14 @@ def generate_cdar(
                                 *[
                                     RAM.ValueDateTime(
                                         UDT.DateTimeString(
-                                            doc_characteristic["MDT-219"], format="102"
+                                            _format_date_102(
+                                                doc_characteristic["MDT-219"]
+                                            ),
+                                            format="102",
                                         )
                                     )
                                     for _ in [1]
-                                    if "MDT-219" in doc_characteristic
+                                    if doc_characteristic.get("MDT-219")
                                 ],
                             )
                             for doc_characteristic in doc_status.get("MDG-43", [])
@@ -1244,52 +1269,101 @@ def generate_cdar(
         root, pretty_print=True, xml_declaration=True, encoding="UTF-8"
     )
     if check_xsd:
-        _cdar_check_xsd(xml_bytes)
+        check_cdar_xsd(root)
     if check_schematron:
-        _cdar_check_schematron(xml_bytes)
+        check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
     return xml_bytes
 
 
-def _cdar_check_xsd(xml_bytes):
-    xsd_absolute_filepath = importlib.resources.files(__package__).joinpath(
-        CDAR_XSD_FILE
-    )
-    logger.debug(f"Using CDAR XSD file {xsd_absolute_filepath}")
+def _format_date_102(date):
+    return date.strftime(CDAR_DATE_FMT["102"])
+
+
+def _format_datetime_204(date_time):
+    return date_time.strftime(CDAR_DATE_FMT["204"])
+
+
+def _check_xsd(xml_to_check, xsd_file, file_type):
+    if isinstance(xml_to_check, (bytes, str)):
+        try:
+            xml_root = etree.parse(BytesIO(xml_to_check))
+        except Exception as err:
+            raise Exception(
+                f"The {file_type} file is not a valid XML file. Error: {err}"
+            ) from err
+    elif isinstance(xml_to_check, type(etree.Element("pouet"))):
+        xml_root = xml_to_check
+    else:
+        raise ValueError(
+            "The first argument must be a bytes, string or an XML etree object"
+        )
+    xsd_absolute_filepath = importlib.resources.files(__package__).joinpath(xsd_file)
+    logger.debug(f"Using {file_type} XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
     try:
-        t = etree.parse(BytesIO(xml_bytes))
-        official_schema.assertValid(t)
-    except Exception as e:
+        official_schema.assertValid(xml_root)
+    except Exception as err:
         # if the validation of the XSD fails, we arrive here
-        logger.error("The CDAR XML file is invalid against the XML Schema Definition")
-        logger.error(f"XSD Error: {str(e)}")
+        logger.error(
+            f"The {file_type} XML file is invalid against the XML Schema Definition"
+        )
+        logger.error(f"XSD Error: {str(err)}")
         raise Exception(
-            "The CDAR XML file is not valid against the official "
+            f"The {file_type} XML file is not valid against the official "
             "XML Schema Definition. "
             "Here is the error, which may give you an idea on the "
-            f"cause of the problem: {str(e)}."
-        ) from e
-    logger.info("CDAR XML file successfully checked against XSD")
+            f"cause of the problem: {str(err)}."
+        ) from err
+    logger.info(f"{file_type} XML file successfully checked against XSD")
 
 
-def _cdar_check_schematron(xml_bytes):
-    # TODO add option to pass saxon_proc_and_style
+def check_cdar_xsd(xml_to_check):
+    return _check_xsd(xml_to_check, CDAR_XSD_FILE, "CDAR")
+
+
+def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=False):
+    if not isinstance(saxon_server_url, (type(None), str)):
+        raise ValueError("saxon_server_url argument must be a string or None")
+    url = saxon_server_url
+    if url is None:
+        url = SAXON_SERVER_DEFAULT_URL
     start_chrono = datetime.datetime.now()
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
     xsl_file_path = importlib.resources.files(__package__).joinpath(CDAR_XSL_FILE)
-    xsl_file_path_str = str(xsl_file_path)
-    with saxonche.PySaxonProcessor() as saxproc:
-        xslt_proc = saxproc.new_xslt30_processor()
-        xdm_node = saxproc.parse_xml(xml_text=xml_str_no_bom)
-        # compile_stylesheet() is the slow/heavy part
-        # So, if you pass the compiled stylesheet as argument, it saves a lot of time
-        # (about 300 ms on an intel laptop)
-        saxon_compiled_stylesheet = xslt_proc.compile_stylesheet(
-            stylesheet_file=xsl_file_path_str
+    xsl_file_str = xsl_file_path.read_text(encoding="utf-8")
+
+    rfiles = {
+        "xml": ("cdar_file.xml", xml_str_no_bom, "text/xml"),
+        "xsl": ("cdar_schematron.xsl", xsl_file_str, "text/xml"),
+    }
+    logger.info(
+        f"Sending HTTP POST request on {url} to validate against CDAR schematron"
+    )
+    try:
+        res = requests.post(url, files=rfiles, timeout=SAXON_SERVER_TIMEOUT)
+    except Exception as err:
+        error_msg = f"Failure in the POST request to saxon server on {url}: {str(err)}"
+        logger.warning(error_msg)
+        if raise_if_http_error:
+            raise RuntimeError(error_msg) from err
+        logger.warning("Skipping CDAR schematron check")
+        return
+
+    if res.status_code != 200:
+        error_msg = (
+            f"Saxon server returned HTTP code {res.status_code} "
+            "(expected HTTP code: 200)"
         )
-        result_str = saxon_compiled_stylesheet.transform_to_string(xdm_node=xdm_node)
+        logger.warning(error_msg)
+        if raise_if_http_error:
+            raise RuntimeError(error_msg)
+        logger.warning("Skipping CDAR schematron check")
+        return
+    logger.info("Saxon server answered successfully")
+    result_str = res.text
+    logger.debug("schematron result_str=%s", result_str)
 
     try:
         svrl_root = etree.fromstring(result_str.encode("utf-8"))
@@ -1336,7 +1410,9 @@ def _cdar_check_schematron(xml_bytes):
     )
 
 
-def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
+def parse_cdar_raw(
+    xml_bytes, check_xsd=True, check_schematron=False, saxon_server_url=None
+):
     if not xml_bytes:
         raise ValueError("xml_bytes argument has no value")
     if isinstance(xml_bytes, str):
@@ -1350,9 +1426,9 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
     except Exception as e:
         raise RuntimeError(f"CDAR file is not a valid XML file. Error: {str(e)}") from e
     if check_xsd:
-        _cdar_check_xsd(xml_bytes)
+        check_cdar_xsd(xml_bytes)
     if check_schematron:
-        _cdar_check_schematron(xml_bytes)
+        check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
     exch_doc_xp = "//rsm:CrossDomainAcknowledgementAndResponse/rsm:ExchangedDocument"
     ack_doc_xp = (
         "//rsm:CrossDomainAcknowledgementAndResponse/rsm:AcknowledgementDocument"
@@ -1426,10 +1502,6 @@ def parse_cdar_raw(xml_bytes, check_xsd=True, check_schematron=True):
 
 
 def _xpath_get_value(xpath, node, namespaces):
-    date_fmt = {
-        "102": "%Y%m%d",
-        "204": "%Y%m%d%H%M%S",
-    }
     xpath_res = node.xpath(xpath, namespaces=namespaces)
     values = []
     for xpath_entry in xpath_res:
@@ -1439,10 +1511,10 @@ def _xpath_get_value(xpath, node, namespaces):
                 value
                 and xpath.endswith(":DateTimeString")
                 and xpath_entry.attrib
-                and xpath_entry.attrib.get("format") in date_fmt
+                and xpath_entry.attrib.get("format") in CDAR_DATE_FMT
             ):
                 value = datetime.datetime.strptime(
-                    value, date_fmt[xpath_entry.attrib["format"]]
+                    value, CDAR_DATE_FMT[xpath_entry.attrib["format"]]
                 )
             elif value and xpath_entry.attrib and xpath_entry.attrib.get("currencyID"):
                 value = {
@@ -1477,9 +1549,14 @@ def _map_nested_keys(data, key_map):
         return data
 
 
-def parse_cdar(xml_bytes, check_xsd=True, check_schematron=True):
+def parse_cdar(
+    xml_bytes, check_xsd=True, check_schematron=False, saxon_server_url=None
+):
     raw_res = parse_cdar_raw(
-        xml_bytes, check_xsd=check_xsd, check_schematron=check_schematron
+        xml_bytes,
+        check_xsd=check_xsd,
+        check_schematron=check_schematron,
+        saxon_server_url=saxon_server_url,
     )
     key_map = {
         "MDT-87": "invoice_number",
