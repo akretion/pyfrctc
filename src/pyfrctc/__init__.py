@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.12"
+__version__ = "0.13"
 from .ereporting import (
     check_ereporting_xsd,
     generate_ereporting_payments,

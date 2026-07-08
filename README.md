@@ -16,6 +16,11 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.13 dated 2026-07-08
+
+  * Fix \_check\_xsd() when XML to check is passed as a string
+  * Tune XSD verification code to avoid converting from object to bytes and back to object
+
 * version 0.12 dated 2026-07-05
 
   * Add support for e-reporting XML generation (transactions and payments) with XSD check
