@@ -1270,6 +1270,11 @@ def generate_cdar(
                             if "MDT-122" in doc_status
                         ],
                         *[
+                            RAM.SequenceNumeric(doc_status["MDT-124-2"])
+                            for _ in [1]
+                            if "MDT-124-2" in doc_status
+                        ],
+                        *[
                             RAM.IncludedNote(RAM.Content(doc_status["MDT-126"]))
                             for _ in [1]
                             if "MDT-126" in doc_status
@@ -1506,6 +1511,7 @@ def parse_cdar_raw(
         "MDT-114": "ram:Reason",
         "MDT-121": "ram:RequestedActionCode",
         "MDT-122": "ram:RequestedAction",
+        "MDT-124-2": "ram:SequenceNumeric",
         "MDT-126": "ram:IncludedNote/ram:Content",
     }
     doc_characteristics_xpath_dict = {
@@ -1626,6 +1632,7 @@ def parse_cdar(
         "MDT-114": "reason_txt",
         "MDT-121": "action_code",
         "MDT-122": "action_txt",
+        "MDT-124-2": "sequence_num",
         "MDT-126": "comment",
         "MDT-207": "type_code",
         "MDT-215": "amount",
