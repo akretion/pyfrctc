@@ -40,7 +40,7 @@ AFNOR_API_VERSION = "v1"
 LIMIT = 100  # 100 is the max value for multi-page requests
 TIMEOUT = 30
 CDAR_XSD_FILE = "cdar-xsd/CrossDomainAcknowledgementAndResponse_100pD22B.xsd"
-CDAR_XSL_FILE = "cdar-schematron/20260430_BR-FR-CDV-Schematron-CDAR_V1.3.1.xsl"
+CDAR_XSLT_FILE = "cdar-schematron/BR-FR-CDV-Schematron-CDAR.xslt"
 CDAR_NS_MAP = {
     "qdt": "urn:un:unece:uncefact:data:standard:QualifiedDataType:100",
     "udt": "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100",
@@ -1212,6 +1212,7 @@ def generate_cdar(
                             for _ in [1]
                             if "MDT-122" in doc_status
                         ],
+                        RAM.SequenceNumeric(doc_status.get("MDT-124-2", seq + 1)),
                         *[
                             RAM.IncludedNote(RAM.Content(doc_status["MDT-126"]))
                             for _ in [1]
@@ -1259,7 +1260,7 @@ def generate_cdar(
                             for doc_characteristic in doc_status.get("MDG-43", [])
                         ],
                     )
-                    for doc_status in data_dict.get("MDG-37", [])
+                    for seq, doc_status in enumerate(data_dict.get("MDG-37", []))
                 ],
             ),
         ),
@@ -1331,12 +1332,12 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
-    xsl_file_path = importlib.resources.files(__package__).joinpath(CDAR_XSL_FILE)
-    xsl_file_str = xsl_file_path.read_text(encoding="utf-8")
+    xslt_file_path = importlib.resources.files(__package__).joinpath(CDAR_XSLT_FILE)
+    xslt_file_str = xslt_file_path.read_text(encoding="utf-8")
 
     rfiles = {
         "xml": ("cdar_file.xml", xml_str_no_bom, "text/xml"),
-        "xsl": ("cdar_schematron.xsl", xsl_file_str, "text/xml"),
+        "xsl": ("cdar_schematron.xsl", xslt_file_str, "text/xml"),
     }
     logger.info(
         f"Sending HTTP POST request on {url} to validate against CDAR schematron"
@@ -1449,6 +1450,7 @@ def parse_cdar_raw(
         "MDT-114": "ram:Reason",
         "MDT-121": "ram:RequestedActionCode",
         "MDT-122": "ram:RequestedAction",
+        "MDT-124-2": "ram:SequenceNumeric",
         "MDT-126": "ram:IncludedNote/ram:Content",
     }
     doc_characteristics_xpath_dict = {
@@ -1526,6 +1528,8 @@ def _xpath_get_value(xpath, node, namespaces):
                     "schemeID": xpath_entry.attrib["schemeID"],
                     "text": value,
                 }
+            elif xpath.endswith("Numeric") and value.isdigit():
+                value = int(value)
             if value:
                 values.append(value)
     if not values:
@@ -1569,6 +1573,7 @@ def parse_cdar(
         "MDT-114": "reason_txt",
         "MDT-121": "action_code",
         "MDT-122": "action_txt",
+        "MDT-124-2": "sequence",
         "MDT-126": "comment",
         "MDT-207": "type_code",
         "MDT-215": "amount",
