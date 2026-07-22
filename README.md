@@ -30,6 +30,7 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 * version 0.12 dated 2026-07-05
 
   * Add support for e-reporting XML generation (transactions and payments) with XSD check
+  * remove dependency on the python lib saxonche and replace it by an HTTP query on a standalone Saxon server
   * generate_cdar(): date fields are now passed in data_dict as datetime object.
 
 * version 0.11 dated 2026-06-29
