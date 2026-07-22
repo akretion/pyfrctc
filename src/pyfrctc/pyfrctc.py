@@ -6,7 +6,7 @@ import base64
 import datetime
 import hashlib
 import importlib.metadata
-import importlib.resources
+import importlib.resources as importlib_resources
 import json
 import logging
 import secrets
@@ -22,6 +22,11 @@ from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 from stdnum.fr.siren import is_valid as siren_is_valid
 from stdnum.fr.siret import is_valid as siret_is_valid
+
+try:
+    _ = importlib_resources.files  # added in py3.9
+except AttributeError:
+    import importlib_resources  # py3.8 compat: pip install importlib-resources
 
 # from pprint import pprint
 
@@ -1298,7 +1303,7 @@ def _check_xsd(xml_to_check, xsd_file, file_type):
         raise ValueError(
             "The first argument must be a bytes, string or an XML etree object"
         )
-    xsd_absolute_filepath = importlib.resources.files(__package__).joinpath(xsd_file)
+    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(xsd_file)
     logger.debug(f"Using {file_type} XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
     try:
@@ -1332,7 +1337,7 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
-    xslt_file_path = importlib.resources.files(__package__).joinpath(CDAR_XSLT_FILE)
+    xslt_file_path = importlib_resources.files(__package__).joinpath(CDAR_XSLT_FILE)
     xslt_file_str = xslt_file_path.read_text(encoding="utf-8")
 
     rfiles = {

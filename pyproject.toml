@@ -7,7 +7,7 @@ name = "pyfrctc"
 description = "Helpers for eInvoicing and eReporting in France"
 authors = [{name = "Alexis de Lattre", email = "alexis.delattre@akretion.com"}]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
     "Operating System :: OS Independent",
@@ -25,8 +25,9 @@ dependencies = [
   "lxml",
   "pytz",
   "python-dateutil",
+  "importlib-resources ; python_version < '3.9'",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dynamic = ["version"]
 
 [project.optional-dependencies]
