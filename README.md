@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.15 dated 2026-08-06
+
+  * Fix bug #11: add "include": ["routingCode"] in the JSON of the POST query on /v1/directory-line/search
+
 * version 0.14 dated 2026-07-16
 
   * Update CDAR schematron to latest version

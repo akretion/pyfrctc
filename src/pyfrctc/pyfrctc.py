@@ -473,6 +473,7 @@ def get_directory_lines(session, siren_or_siret):
         },
         "limit": LIMIT,
         "ignore": 0,  # for multipage
+        "include": ["routingCode"],
         "sorting": [
             {
                 "field": "addressingIdentifier",
