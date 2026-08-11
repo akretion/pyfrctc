@@ -39,7 +39,25 @@ PLATFORMS = {
         "token_url": "https://api.superpdp.tech/oauth2/token",
         "authorize_url": "https://api.superpdp.tech/oauth2/authorize",
         "label": "SUPER PDP",
-    }
+        # SuperPDP has added afnor-flow or afnor-directory in URI
+        "add_afnor_type_uri": True,
+        # Sorting order key diverges from AFNOR API "order"
+        "sorting_key": "sortingOrder",
+    },
+    "esalink_test": {
+        "afnor_base_url": "https://ppd.hubtimize.fr/api/orchestrator",
+        "token_url": "https://ppd.hubtimize.fr/api/orchestrator/v1/oauth2/token",
+        "authorize_url": "https://ppd.hubtimize.fr/api/orchestrator/v1/oauth2/authorize",
+        "label": "EsaLink (test)",
+        "extra-header-expected": "hubtimize-api-key",
+    },
+    "esalink_prod": {
+        "afnor_base_url": "https://hubtimize.fr/api/orchestrator",
+        "token_url": "https://hubtimize.fr/api/orchestrator/v1/oauth2/token",
+        "authorize_url": "https://hubtimize.fr/api/orchestrator/v1/oauth2/authorize",
+        "label": "EsaLink",
+        "extra-header-expected": "hubtimize-api-key",
+    },
 }
 AFNOR_API_VERSION = "v1"
 LIMIT = 100  # 100 is the max value for multi-page requests
@@ -66,17 +84,54 @@ SAXON_SERVER_DEFAULT_URL = "http://localhost:5000/transform"
 SAXON_SERVER_TIMEOUT = 5
 
 
-def _get_plateform(session):
+def _get_platform(session):
     if not session:
         raise ValueError("session argument has no value")
     token_url = session.auto_refresh_url
-    for plateform, url_dict in PLATFORMS.items():
+    for platform, url_dict in PLATFORMS.items():
         if url_dict.get("token_url") == token_url:
-            return plateform
+            return platform
     logger.warning(
         f"token_url {token_url} is not in PLATFORMS. It should never happen."
     )
     return None
+
+
+def _get_platform_base_url(session, type=None):
+    platform = _get_platform(session)
+    if platform not in PLATFORMS:
+        raise ValueError(f"Platform {platform} is not supported yet.")
+    base_url = PLATFORMS[platform]["afnor_base_url"]
+    if PLATFORMS[platform].get("add_afnor_type_uri", False) and type:
+        base_url += f"/afnor-{type}"
+    base_url += f"/{AFNOR_API_VERSION}"
+    return base_url
+
+
+def _get_platform_extra_headers(platform, extra_header_dict=None):
+    if platform not in PLATFORMS:
+        raise ValueError(f"Platform {platform} is not supported yet.")
+    headers = {}
+    expected_header_key = PLATFORMS[platform].get("extra-header-expected", False)
+    if expected_header_key:
+        if not extra_header_dict:
+            raise ValueError(f"Expected Header key {expected_header_key} not provided")
+        elif len(extra_header_dict) != 1:
+            raise ValueError("Only one extra header key/value expected")
+        elif expected_header_key not in extra_header_dict.keys():
+            raise ValueError(f"Extra header expected key ({expected_header_key}) is different from provided one ({' '.join(extra_header_dict.keys())})")
+        headers = extra_header_dict
+    return headers
+
+
+def _remove_null_values_json_response(resp):
+    def _remove_nulls(d):
+        return {k: v for k,v in d.items() if v is not None}
+
+    resp._content = json.dumps(
+        json.loads(resp.text, object_hook=_remove_nulls)
+    ).encode()
+    return resp
 
 
 def _get_session_client_credentials(
@@ -86,6 +141,7 @@ def _get_session_client_credentials(
     update_token_method,
     client_id,
     client_secret,
+    extra_headers=None,
 ):
     # In the client_credentials scenario, we can't use OAuth2Session()
     # to automate the retreival of a new access_token when the previous has expired
@@ -104,20 +160,35 @@ def _get_session_client_credentials(
         token = None
     # In OAuth2Session(), the argument auto_refresh_url=TOKEN_URL
     # is useless in this 'client_credentials' scenario,
-    # but I use it because it is used by pyfrctc to get the plateform
-    # from the session object (it avoids passing the plateform arg on every call to
+    # but I use it because it is used by pyfrctc to get the platform
+    # from the session object (it avoids passing the platform arg on every call to
     # pyfrctc for the AFNOR API
     client = BackendApplicationClient(client_id=client_id)
     session = OAuth2Session(
         client=client, token=token, auto_refresh_url=PLATFORMS[platform]["token_url"]
     )
+    # Add extra_headers to session
+    headers = _get_platform_extra_headers(platform, extra_headers)
+    for key, value in headers.items():
+        session.headers[key] = value
     if not use_existing_token:
+        # Added hook to remove null values from token response
+        # In particular because EsaLink PA replies with error = null causing failure in response parsing
+        session.register_compliance_hook(
+            "access_token_response",
+            _remove_null_values_json_response
+            )
+        token_headers = headers | {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
         token = session.fetch_token(
             PLATFORMS[platform]["token_url"],
             client_id=client_id,
             client_secret=client_secret,
             timeout=TIMEOUT,
             verify=True,
+            headers=token_headers,
         )
         logger.info("Got a new token for company %s", company_ident4log)
         update_token_method(token)
@@ -155,6 +226,7 @@ def get_session(
     update_token_method,
     client_id,
     client_secret=None,
+    extra_headers=None,
 ):
     if not platform:
         raise ValueError("Argument platform has no value")
@@ -173,6 +245,7 @@ def get_session(
             update_token_method,
             client_id,
             client_secret,
+            extra_headers,
         )
     elif auth_method == "authorization_code":
         return _get_session_authorization_code(
@@ -261,11 +334,8 @@ def healthcheck(session, raise_if_error=True, type="directory"):
         raise ValueError("session argument has no value")
     if type not in ("directory", "flow"):
         raise ValueError("type argument can have 2 values: 'directory' or 'flow'")
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Platform {platform} is not supported yet.")
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-{type}/{AFNOR_API_VERSION}/healthcheck"
+    base_url = _get_platform_base_url(session, type)
+    url = f"{base_url}/healthcheck"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
@@ -292,9 +362,6 @@ def get_directory_siren(session, siren):
     """Returns False if SIREN is not in the directory"""
     if not session:
         raise ValueError("session argument has no value")
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
     if not siren:
         raise ValueError("siren argument has no value")
     if not isinstance(siren, str):
@@ -302,8 +369,8 @@ def get_directory_siren(session, siren):
     siren = "".join(x for x in siren if not x.isspace())
     if not siren_is_valid(siren):
         raise ValueError(f"SIREN {siren} is not valid.")
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/siren/code-insee:{siren}"
+    base_url = _get_platform_base_url(session, "directory")
+    url = f"{base_url}/siren/code-insee:{siren}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
@@ -366,9 +433,6 @@ def get_directory_siren_parsed(session, siren):
 def get_directory_siret(session, siret):
     if not session:
         raise ValueError("session argument has no value")
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
     if not siret:
         raise ValueError("siret argument has no value")
     if not isinstance(siret, str):
@@ -376,8 +440,8 @@ def get_directory_siret(session, siret):
     siret = "".join(x for x in siret if not x.isspace())
     if not siret_is_valid(siret):
         raise ValueError(f"SIRET {siret} is not valid.")
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/siret/code-insee:{siret}"
+    base_url = _get_platform_base_url(session, "directory")
+    url = f"{base_url}/siret/code-insee:{siret}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
@@ -444,9 +508,6 @@ def get_directory_siret_parsed(session, siret):
 def get_directory_lines(session, siren_or_siret):
     if not session:
         raise ValueError("session argument has no value")
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
     if not siren_or_siret:
         raise ValueError("siren_or_siret argument has no value")
     if not isinstance(siren_or_siret, str):
@@ -467,6 +528,7 @@ def get_directory_lines(session, siren_or_siret):
         raise ValueError("{siren_or_siret} is not a valid SIREN nor SIRET.")
 
     res = {}  # key = dir line identifier, value = dir line values
+    platform = _get_platform(session)
     query_json = {
         "filters": {
             "siren": {"op": "strict", "value": siren},
@@ -477,14 +539,14 @@ def get_directory_lines(session, siren_or_siret):
         "sorting": [
             {
                 "field": "addressingIdentifier",
-                "sortingOrder": "ascending",
+                PLATFORMS[platform].get("sorting_key", "order"): "ascending",
             }
         ],
     }
     if siret:
         query_json["filters"]["siret"] = {"op": "strict", "value": siret}
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/directory-line/search"
+    base_url = _get_platform_base_url(session, "directory")
+    url = f"{base_url}/directory-line/search"
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     logger.debug(f"Json in query: {query_json}")
     try:
@@ -522,12 +584,16 @@ def get_directory_lines(session, siren_or_siret):
     if (
         "results" in list_dir_dict
         and isinstance(list_dir_dict["results"], list)
-        and "totalNumberOfResults" in list_dir_dict
-        and isinstance(list_dir_dict["totalNumberOfResults"], int)
+        and (
+                ("totalNumberOfResults" in list_dir_dict
+                and isinstance(list_dir_dict["totalNumberOfResults"], int))
+        or ("total_number_results" in list_dir_dict
+                and isinstance(list_dir_dict["total_number_results"], int))
+        )
     ):
         for dir_line in list_dir_dict["results"]:
             res[dir_line["addressingIdentifier"]] = dir_line
-        result_total = list_dir_dict["totalNumberOfResults"]
+        result_total = list_dir_dict.get("totalNumberOfResults", 0) or list_dir_dict.get("total_number_results", 0)
     else:
         raise RuntimeError(f"Answer to POST request on {url} is malformed.")
     if result_total > LIMIT:
@@ -666,7 +732,7 @@ def get_directory_lines_parsed(
         else:
             state = "disabled"
 
-        if "routingCode" in vals:
+        if "routingCode" in vals and vals.get("routingCode") is not None:
             type = "routing_code"
             routing_dict = vals["routingCode"]
             if not isinstance(routing_dict, dict):
@@ -724,7 +790,7 @@ def get_directory_lines_parsed(
                 commitment_required = True
             expected_identifier = f"{siren}_{siret}_{routing_code}"
 
-        elif "addressingSuffix" in vals:
+        elif "addressingSuffix" in vals and vals.get("addressingSuffix") is not None:
             type = "suffix"
             suffix = vals["addressingSuffix"]
             if not isinstance(suffix, str):
@@ -809,9 +875,6 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
         "NotApplicable",
     ):
         raise ValueError("processing_rule argument has a wrong value")
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
     payload = {
         "file": (filename, BytesIO(file_bin)),
         "flowInfo": (
@@ -827,8 +890,8 @@ def send_flow(session, file_bin, filename, flow_syntax, processing_rule):
             "text/plain",
         ),
     }
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-flow/{AFNOR_API_VERSION}/flows"
+    base_url = _get_platform_base_url(session, "flow")
+    url = f"{base_url}/flows"
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     try:
         post_res = session.post(url, files=payload, timeout=TIMEOUT)
@@ -922,9 +985,6 @@ def search_flows(
             raise ValueError(
                 "Argument flow_type must be a list of strings (or a string)"
             )
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
     query_json = {
         "where": {
             "updatedAfter": updated_after,
@@ -935,8 +995,8 @@ def search_flows(
         query_json["where"]["flowType"] = flow_type
     if flow_direction:
         query_json["where"]["flowDirection"] = flow_direction
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-flow/{AFNOR_API_VERSION}/flows/search"
+    base_url = _get_platform_base_url(session, "flow")
+    url = f"{base_url}/flows/search"
     next_page = True
     res = []
     while next_page:
@@ -1025,11 +1085,8 @@ def get_flow(session, flow_id, doc_type=None):
                 f"Value {doc_type} is not allowed for the argument doc_type. "
                 f"Allowed values: {doc_type_values}"
             )
-    platform = _get_plateform(session)
-    if platform not in PLATFORMS:
-        raise ValueError(f"Plateform {platform} is not supported yet.")
-    base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-flow/{AFNOR_API_VERSION}/flows/{flow_id}"
+    base_url = _get_platform_base_url(session, "flow")
+    url = f"{base_url}/flows/{flow_id}"
     params = {}
     if doc_type:
         params["docType"] = doc_type
