@@ -16,6 +16,12 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.16 dated 2026-08-30
+
+  * e-reporting XML generation: no need to provide BT-24, we always set it to 'urn.cpro.gouv.fr:1p0:ereporting'
+  * e-reporting XML generation: BT-47 is not required in the official specification
+  * e-reporting XML generation: Fix for BT-48
+
 * version 0.15 dated 2026-08-06
 
   * Fix bug #11: add "include": ["routingCode"] in the JSON of the POST query on /v1/directory-line/search

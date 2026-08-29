@@ -47,7 +47,7 @@ def _single_invoice(E, inv_dict):
         ],
         E.BusinessProcess(
             E.ID(inv_dict["BT-23"]),
-            E.TypeID(inv_dict["BT-24"]),
+            E.TypeID("urn.cpro.gouv.fr:1p0:ereporting"),
         ),
         *[
             E.ReferencedDocument(
@@ -71,8 +71,16 @@ def _single_invoice(E, inv_dict):
             ],
         ),
         E.Buyer(
-            E.CompanyId(inv_dict["BT-47"], schemeId=inv_dict["BT-47-1"]),
-            *[E.TaxRegistrationId(inv_dict["BT-48"], qualifyingId="VAT")],
+            *[
+                E.CompanyId(inv_dict["BT-47"], schemeId=inv_dict["BT-47-1"])
+                for _ in [1]
+                if inv_dict.get("BT-47") and inv_dict.get("BT-47-1")
+            ],
+            *[
+                E.TaxRegistrationId(inv_dict["BT-48"], qualifyingId="VAT")
+                for _ in [1]
+                if inv_dict.get("BT-48")
+            ],
             *[
                 E.PostalAddress(E.CountryId(inv_dict["BT-55"]))
                 for _ in [1]
