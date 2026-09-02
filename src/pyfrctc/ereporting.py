@@ -2,8 +2,11 @@
 # @author: Alexis de Lattre <alexis.delattre@akretion.com>
 # Licence LGPL-2.1 or later (https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html).
 
+import datetime
 import logging
+from calendar import monthrange
 
+from dateutil.relativedelta import relativedelta
 from lxml import etree, objectify
 
 from .pyfrctc import _check_xsd
@@ -410,3 +413,110 @@ def check_ereporting_xsd(xml_to_check):
     # It probably explains... but they could have provided another XSD
     # for the exchanges between providers and PA...
     return _check_xsd(xml_to_check, EREPORTING_XSD_FILE, "eReporting")
+
+
+def get_ereporting_end_date_and_deadline_from_start_date(
+    start_date, type, vat_periodicity
+):
+    # vat_periodicity:
+    # "1": régime normal réel mensuel
+    # "3": régime réel normal trimestriel
+    # "12": régime simplifié d'imposition TVA
+    # None or False: régime de franchise en base de TVA
+    if not isinstance(start_date, (datetime.datetime, datetime.date)):
+        raise ValueError("The start_date arg must be a python date object.")
+    if type not in ("payment", "in_transaction", "out_transaction"):
+        raise ValueError(
+            "Wrong value for type arg. Possible values: "
+            "payment, in_transaction and out_transaction."
+        )
+    if vat_periodicity not in ("1", "3", "12", False, None):
+        raise ValueError(
+            "Wrong value for vat_periodicity arg. "
+            "Possible values: '1', '3', '12' or None."
+        )
+    if vat_periodicity == "1":
+        if type == "payment":
+            end_date = start_date + relativedelta(day=31)
+            deadline = start_date + relativedelta(months=1, day=10)
+        else:
+            if start_date.day == 1:
+                end_date = start_date + relativedelta(day=10)
+                deadline = start_date + relativedelta(day=20)
+            elif start_date.day == 11:
+                end_date = start_date + relativedelta(day=20)
+                deadline = start_date + relativedelta(day=31)
+            elif start_date.day == 21:
+                end_date = start_date + relativedelta(day=31)
+                deadline = start_date + relativedelta(months=1, day=10)
+            else:
+                raise ValueError(
+                    "On transaction reports, the start date must be day 1, 11 or 21 "
+                    "of the month."
+                )
+    elif vat_periodicity == "3":
+        end_date = start_date + relativedelta(day=31)
+        deadline = start_date + relativedelta(months=1, day=10)
+    elif vat_periodicity == "12":
+        end_date = start_date + relativedelta(day=31)
+        deadline = start_date + relativedelta(months=1, day=31)
+    elif not vat_periodicity:
+        end_date = start_date + relativedelta(months=1, day=31)
+        deadline = start_date + relativedelta(months=2, day=31)
+    return (end_date, deadline)
+
+
+def get_ereporting_types_to_declare_today(
+    vat_periodicity, days_before_deadline, today=None
+):
+    if vat_periodicity not in ("1", "3", "12", False, None):
+        raise ValueError(
+            "Wrong value for vat_periodicity arg. "
+            "Possible values: '1', '3', '12' or None."
+        )
+    if not isinstance(days_before_deadline, int):
+        raise ValueError("The days_before_deadline arg must be an integer.")
+    if days_before_deadline > 7 or days_before_deadline < 0:
+        raise ValueError("The days_before_deadline arg must be between 0 and 7.")
+    if not today:
+        # If today is not given as arg, we fallback to today in UTC timezone
+        # If you don't want that, give the current day in your timezone
+        today = datetime.datetime.now(datetime.UTC).date()
+    if not isinstance(today, datetime.date):
+        raise ValueError("The today arg must be a python date object.")
+    res = {}  # key = type, value = start_date
+    while days_before_deadline >= 0 and not res:
+        date = today + relativedelta(days=days_before_deadline)
+        last_day_of_month = monthrange(date.year, date.month)[1]
+        if vat_periodicity == "1":
+            if date.day == 10:
+                res = {
+                    "out_transaction": today + relativedelta(months=-1, day=21),
+                    "payment": today + relativedelta(months=-1, day=1),
+                }
+            elif date.day == 20:
+                res["out_transaction"] = today + relativedelta(day=1)
+            elif date.day == last_day_of_month:
+                res["out_transaction"] = today + relativedelta(day=11)
+        elif vat_periodicity == "3":
+            if date.day == 10:
+                res = {
+                    "out_transaction": today + relativedelta(months=-1, day=1),
+                    "payment": today + relativedelta(months=-1, day=1),
+                }
+        elif vat_periodicity == "12":
+            if date.day == last_day_of_month:
+                res = {
+                    "out_transaction": today + relativedelta(months=-1, day=1),
+                    "payment": today + relativedelta(months=-1, day=1),
+                }
+        elif not vat_periodicity:
+            if date.day == last_day_of_month and date.month % 2 == 1:
+                res = {
+                    "out_transaction": today + relativedelta(months=-2, day=1),
+                    "payment": today + relativedelta(months=-2, day=1),
+                }
+        days_before_deadline -= 1
+    if res.get("out_transaction"):
+        res["in_transaction"] = res["out_transaction"]
+    return res

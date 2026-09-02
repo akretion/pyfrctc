@@ -25,6 +25,7 @@ dependencies = [
   "lxml",
   "pytz",
   "python-dateutil",
+  "dnspython",
   "importlib-resources ; python_version < '3.9'",
 ]
 requires-python = ">=3.8"
@@ -42,6 +43,7 @@ Source = "https://github.com/akretion/pyfrctc"
 Issues = "https://github.com/akretion/pyfrctc/issues"
 
 [project.scripts]
+pyfrctc-peppol_dir_line_check = "pyfrctc.scripts.peppol_dir_line_check:main"
 
 [tool.hatch.version]
 source = "vcs"

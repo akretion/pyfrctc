@@ -1,11 +1,14 @@
 import logging
 
-__version__ = "0.16"
+__version__ = "0.17"
 from .ereporting import (
     check_ereporting_xsd,
     generate_ereporting_payments,
     generate_ereporting_transactions,
+    get_ereporting_end_date_and_deadline_from_start_date,
+    get_ereporting_types_to_declare_today,
 )
+from .peppol import check_directory_line_peppol_status
 from .pyfrctc import (
     authorization_code_first_token,
     check_cdar_schematron,
@@ -55,6 +58,9 @@ __all__ = [
     "generate_ereporting_transactions",
     "generate_ereporting_payments",
     "check_ereporting_xsd",
+    "get_ereporting_end_date_and_deadline_from_start_date",
+    "get_ereporting_types_to_declare_today",
+    "check_directory_line_peppol_status",
 ]
 
 

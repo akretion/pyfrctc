@@ -16,6 +16,11 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.17 dated 2026-09-02
+
+  * Add 3 new methods: check_directory_line_peppol_status, get_ereporting_end_date_and_deadline_from_start_date and get_ereporting_types_to_declare_today
+  * Add a script pyfrctc-peppol_dir_line_check to easily check the PEPPOL status of a directory line. Run the script with --help for instructions.
+
 * version 0.16 dated 2026-08-30
 
   * e-reporting XML generation: no need to provide BT-24, we always set it to 'urn.cpro.gouv.fr:1p0:ereporting'

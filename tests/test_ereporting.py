@@ -2,9 +2,14 @@
 # @author: Alexis de Lattre <alexis.delattre@akretion.com>
 
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
-from pyfrctc import generate_ereporting_payments, generate_ereporting_transactions
+from pyfrctc import (
+    generate_ereporting_payments,
+    generate_ereporting_transactions,
+    get_ereporting_end_date_and_deadline_from_start_date,
+    get_ereporting_types_to_declare_today,
+)
 
 DATE_FMT = "%Y-%m-%d"
 
@@ -486,3 +491,81 @@ class TestGenerateEreporting(unittest.TestCase):
     def test_generate_ereporting_payments(self):
         data_dict = self._prepare_payments()
         _xml_bytes = generate_ereporting_payments(data_dict)
+
+    def test_get_end_date_and_deadline_from_start_date(self):
+        in2out = {
+            (date(2026, 9, 1), "payment", "1"): (date(2026, 9, 30), date(2026, 10, 10)),
+            (date(2026, 9, 1), "out_transaction", "1"): (
+                date(2026, 9, 10),
+                date(2026, 9, 20),
+            ),
+            (date(2026, 9, 11), "out_transaction", "1"): (
+                date(2026, 9, 20),
+                date(2026, 9, 30),
+            ),
+            (date(2026, 9, 21), "out_transaction", "1"): (
+                date(2026, 9, 30),
+                date(2026, 10, 10),
+            ),
+            (date(2026, 9, 1), "out_transaction", "3"): (
+                date(2026, 9, 30),
+                date(2026, 10, 10),
+            ),
+            (date(2026, 9, 1), "payment", "3"): (date(2026, 9, 30), date(2026, 10, 10)),
+            (date(2026, 9, 1), "out_transaction", "12"): (
+                date(2026, 9, 30),
+                date(2026, 10, 31),
+            ),
+            (date(2026, 9, 1), "payment", "12"): (
+                date(2026, 9, 30),
+                date(2026, 10, 31),
+            ),
+            (date(2026, 9, 1), "out_transaction", None): (
+                date(2026, 10, 31),
+                date(2026, 11, 30),
+            ),
+            (date(2026, 9, 1), "payment", None): (
+                date(2026, 10, 31),
+                date(2026, 11, 30),
+            ),
+        }
+        for method_args, res in in2out.items():
+            result = get_ereporting_end_date_and_deadline_from_start_date(*method_args)
+            self.assertEqual(res, result)
+
+    def test_get_types_to_declare_today(self):
+        in2out = {
+            ("1", 2, date(2026, 9, 6)): {},
+            ("1", 0, date(2026, 9, 20)): {"out_transaction": date(2026, 9, 1)},
+            ("1", 2, date(2026, 9, 18)): {"out_transaction": date(2026, 9, 1)},
+            ("1", 2, date(2026, 9, 19)): {"out_transaction": date(2026, 9, 1)},
+            ("1", 2, date(2026, 9, 20)): {"out_transaction": date(2026, 9, 1)},
+            ("1", 0, date(2026, 9, 30)): {"out_transaction": date(2026, 9, 11)},
+            ("1", 0, date(2026, 9, 10)): {
+                "out_transaction": date(2026, 8, 21),
+                "payment": date(2026, 8, 1),
+            },
+            ("3", 0, date(2026, 9, 10)): {
+                "out_transaction": date(2026, 8, 1),
+                "payment": date(2026, 8, 1),
+            },
+            ("3", 5, date(2026, 9, 20)): {},
+            ("12", 0, date(2026, 9, 30)): {
+                "out_transaction": date(2026, 8, 1),
+                "payment": date(2026, 8, 1),
+            },
+            ("12", 6, date(2026, 9, 12)): {},
+            (None, 0, date(2026, 9, 30)): {
+                "out_transaction": date(2026, 7, 1),
+                "payment": date(2026, 7, 1),
+            },
+            (None, 3, date(2026, 10, 15)): {},
+            (None, 0, date(2026, 10, 31)): {},
+        }
+        for method_args, res in in2out.items():
+            result = get_ereporting_types_to_declare_today(*method_args)
+            self.assertEqual(result.get("out_transaction"), res.get("out_transaction"))
+            self.assertEqual(result.get("payment"), res.get("payment"))
+            self.assertEqual(
+                result.get("out_transaction"), result.get("in_transaction")
+            )
