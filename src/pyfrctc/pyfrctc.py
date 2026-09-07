@@ -1562,12 +1562,17 @@ def _map_nested_keys(data, key_map):
 def parse_cdar(
     xml_bytes, check_xsd=True, check_schematron=False, saxon_server_url=None
 ):
-    raw_res = parse_cdar_raw(
+    # This is a two-in-one method
+    raw_cdar_dict = parse_cdar_raw(
         xml_bytes,
         check_xsd=check_xsd,
         check_schematron=check_schematron,
         saxon_server_url=saxon_server_url,
     )
+    return parse_cdar_from_raw(raw_cdar_dict)
+
+
+def parse_cdar_from_raw(raw_cdar_dict):
     key_map = {
         "MDT-87": "invoice_number",
         "MDT-129": "invoice_issuer",
@@ -1587,7 +1592,7 @@ def parse_cdar(
         "MDG-37": "doc_status",
         "MDG-43": "doc_characteristics",
     }
-    res = _map_nested_keys(raw_res, key_map)
+    res = _map_nested_keys(raw_cdar_dict, key_map)
     return res
 
 

@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.18"
+__version__ = "0.19"
 from .ereporting import (
     check_ereporting_xsd,
     generate_ereporting_payments,
@@ -26,6 +26,7 @@ from .pyfrctc import (
     get_session,
     healthcheck,
     parse_cdar,
+    parse_cdar_from_raw,
     parse_cdar_raw,
     search_flows,
     search_flows_parsed,
@@ -48,6 +49,7 @@ __all__ = [
     "get_session",
     "healthcheck",
     "parse_cdar",
+    "parse_cdar_from_raw",
     "parse_cdar_raw",
     "check_cdar_schematron",
     "check_cdar_xsd",
