@@ -1306,7 +1306,7 @@ def _check_xsd(xml_to_check, xsd_file, file_type):
         )
     xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(xsd_file)
     logger.debug(f"Using {file_type} XSD file {xsd_absolute_filepath}")
-    official_schema = etree.XMLSchema(file=xsd_absolute_filepath)
+    official_schema = etree.XMLSchema(file=str(xsd_absolute_filepath))
     try:
         official_schema.assertValid(xml_etree)
     except Exception as err:

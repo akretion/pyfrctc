@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.18 dated 2026-09-07
+
+  * Fix compatibility with lxml 4.6.5 or lower
+
 * version 0.17 dated 2026-09-02
 
   * Add 3 new methods: check_directory_line_peppol_status, get_ereporting_end_date_and_deadline_from_start_date and get_ereporting_types_to_declare_today
