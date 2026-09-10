@@ -722,7 +722,7 @@ def get_directory_lines_parsed(
                     "commitment_required"
                 )
                 commitment_required = True
-            expected_identifier = f"{siren}_{siret}_{routing_code}"
+            expected_identifier = f"{siren}_{dir_siret}_{routing_code}"
 
         elif "addressingSuffix" in vals:
             type = "suffix"

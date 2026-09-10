@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.20 dated 2026-09-10
+
+  * Fix in get_directory_lines_parsed() for routing code directory lines when arg siren_or_siret is a SIREN
+
 * version 0.19 dated 2026-09-07
 
   * Add method parse_cdar_from_raw()
