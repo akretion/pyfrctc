@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.22 dated 2026-09-11
+
+  * Handle entities not in directory for get_directory_siret_parsed() and get_directory_siret()
+
 * version 0.21 dated 2026-09-11
 
   * New method **check_ereporting_schematron()** Beware of [this bug](https://github.com/fnfempe/France_RFE/issues/60) in the e-reporting schematron for payment e-reporting.

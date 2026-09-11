@@ -303,31 +303,22 @@ def get_directory_siren(session, siren):
     if not siren_is_valid(siren):
         raise ValueError(f"SIREN {siren} is not valid.")
     base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/siren/code-insee:{siren}"
+    url = f"{base_url}/afnor-directory/{AFNOR_API_VERSION}/siren/code-insee:{siren}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
     except Exception as e:
         raise ConnectionError(f"GET request on {url} failed. Error: {str(e)}") from e
     status_code = get_res.status_code
-    if status_code == 404:  # SIREN not in directory
-        return False
-    elif status_code == 200:
-        siren_dict = get_res.json()
-        logger.debug(f"Answer JSON: {siren_dict}")
-        answer_siren = siren_dict.get("siren")
-        if answer_siren != siren:
-            raise RuntimeError(
-                f"Answer of GET request on {url} is inconsistent: "
-                f"SIREN in answer ({answer_siren}) is different from "
-                f"query SIREN ({siren}). This should never happen."
-            )
-        return siren_dict
-    else:
+    if status_code != 200:
         error_code = error_msg = None
         try:
             error_json = get_res.json()
             error_code = error_json.get("errorCode")
+            if (
+                error_code == "NOT_FOUND" and status_code == 404
+            ):  # SIREN not in directory
+                return False
             error_msg = error_json.get("errorMessage")
         except Exception:
             pass
@@ -335,6 +326,16 @@ def get_directory_siren(session, siren):
             f"GET request on {url} failed ({status_code}). "
             f"Error code: {error_code}. Error message: {error_msg}"
         )
+    siren_dict = get_res.json()
+    logger.debug(f"Answer JSON: {siren_dict}")
+    answer_siren = siren_dict.get("siren")
+    if answer_siren != siren:
+        raise RuntimeError(
+            f"Answer of GET request on {url} is inconsistent: "
+            f"SIREN in answer ({answer_siren}) is different from "
+            f"query SIREN ({siren}). This should never happen."
+        )
+    return siren_dict
 
 
 def get_directory_siren_parsed(session, siren):
@@ -377,7 +378,7 @@ def get_directory_siret(session, siret):
     if not siret_is_valid(siret):
         raise ValueError(f"SIRET {siret} is not valid.")
     base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/siret/code-insee:{siret}"
+    url = f"{base_url}/afnor-directory/{AFNOR_API_VERSION}/siret/code-insee:{siret}"
     logger.info(f"Sending GET request on {url} (v{VERSION})")
     try:
         get_res = session.get(url, timeout=TIMEOUT)
@@ -389,6 +390,10 @@ def get_directory_siret(session, siret):
         try:
             error_json = get_res.json()
             error_code = error_json.get("errorCode")
+            if (
+                error_code == "NOT_FOUND" and status_code == 404
+            ):  # SIRET not in directory
+                return False
             error_msg = error_json.get("errorMessage")
         except Exception:
             pass
@@ -410,34 +415,41 @@ def get_directory_siret(session, siret):
 
 def get_directory_siret_parsed(session, siret):
     siret_dict = get_directory_siret(session, siret)
-    closed = siret_dict.get("administrativeStatus") == "C"
-    res = {
-        "name": siret_dict.get("name"),
-        "closed": closed,
-        "country_code": siret_dict.get("address", {}).get("countryCode"),
-        "zip": siret_dict.get("address", {}).get("postalCode"),
-        "street": siret_dict.get("address", {}).get("addressLine1"),
-        "city": siret_dict.get("address", {}).get("locality"),
-        "siret": siret_dict["siret"],
-    }
-    # Reminder: a public entity without service nor commitment required doesn't have a
-    # key 'b2gAdditionalData' in JSON answer
-    if "b2gAdditionalData" in siret_dict and isinstance(
-        siret_dict["b2gAdditionalData"], dict
-    ):
-        res.update(
-            {
-                "b2g_service_required": siret_dict["b2gAdditionalData"].get(
-                    "serviceCodeStatus"
-                ),
-                "b2g_commitment_required": siret_dict["b2gAdditionalData"].get(
-                    "managesLegalCommitmentCode"
-                ),
-                "b2g_service_or_commitment_required": siret_dict[
-                    "b2gAdditionalData"
-                ].get("managesLegalCommitmentOrServiceCode"),
-            }
-        )
+    if siret_dict:
+        closed = siret_dict.get("administrativeStatus") == "C"
+        res = {
+            "name": siret_dict.get("name"),
+            "closed": closed,
+            "country_code": siret_dict.get("address", {}).get("countryCode"),
+            "zip": siret_dict.get("address", {}).get("postalCode"),
+            "street": siret_dict.get("address", {}).get("addressLine1"),
+            "city": siret_dict.get("address", {}).get("locality"),
+            "siret": siret_dict["siret"],
+        }
+        # Reminder: a public entity without service nor commitment required
+        # doesn't have a key 'b2gAdditionalData' in JSON answer
+        if "b2gAdditionalData" in siret_dict and isinstance(
+            siret_dict["b2gAdditionalData"], dict
+        ):
+            res.update(
+                {
+                    "b2g_service_required": siret_dict["b2gAdditionalData"].get(
+                        "serviceCodeStatus"
+                    ),
+                    "b2g_commitment_required": siret_dict["b2gAdditionalData"].get(
+                        "managesLegalCommitmentCode"
+                    ),
+                    "b2g_service_or_commitment_required": siret_dict[
+                        "b2gAdditionalData"
+                    ].get("managesLegalCommitmentOrServiceCode"),
+                }
+            )
+    else:
+        siret = "".join(x for x in siret if not x.isspace())
+        res = {
+            "entity_type": "no",
+            "siret": siret,
+        }
     return res
 
 
@@ -484,7 +496,7 @@ def get_directory_lines(session, siren_or_siret):
     if siret:
         query_json["filters"]["siret"] = {"op": "strict", "value": siret}
     base_url = PLATFORMS[platform]["afnor_base_url"]
-    url = f"{base_url}/afnor-directory/" f"{AFNOR_API_VERSION}/directory-line/search"
+    url = f"{base_url}/afnor-directory/{AFNOR_API_VERSION}/directory-line/search"
     logger.info(f"Sending POST request on {url} (v{VERSION})")
     logger.debug(f"Json in query: {query_json}")
     try:
