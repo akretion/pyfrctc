@@ -1,0 +1,42 @@
+# Source :
+# https://communaute.chorus-pro.gouv.fr/pieces-jointes-dans-chorus-pro-quelques-regles-a-respecter/
+
+CHORUS_ATTACHMENT_FILENAME_MAX = 50  # extension included
+CHORUS_ATTACHMENT_FILESIZE_MAX_MB = 10
+CHORUS_ATTACHMENT_ALLOWED_EXTENSIONS = [
+    ".BMP",
+    ".GIF",
+    ".FAX",
+    ".ODT",
+    ".PPT",
+    ".TIFF",
+    ".XLS",
+    ".BZ2",
+    ".GZ",
+    ".JPEG",
+    ".P7S",
+    ".RTF",
+    ".TXT",
+    ".XML",
+    ".CSV",
+    ".GZIP",
+    ".JPG",
+    ".PDF",
+    ".SVG",
+    ".XHTML",
+    ".XLSX",
+    ".DOC",
+    ".HTM",
+    ".ODP",
+    ".PNG",
+    ".TGZ",
+    ".XLC",
+    ".ZIP",
+    ".DOCX",
+    ".HTML",
+    ".ODS",
+    ".PPS",
+    ".TIF",
+    ".XLM",
+    ".PPTX",
+]

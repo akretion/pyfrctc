@@ -16,6 +16,13 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.21 dated 2026-09-11
+
+  * New method **check_ereporting_schematron()** Beware of [this bug](https://github.com/fnfempe/France_RFE/issues/60) in the e-reporting schematron for payment e-reporting.
+  * New variables **CHORUS_ATTACHMENT_ALLOWED_EXTENSIONS**, **CHORUS_ATTACHMENT_FILENAME_MAX** and **CHORUS_ATTACHMENT_FILESIZE_MAX_MB**
+  * New script **pyfrctc-xmlcheck** to check a CDAR file or e-Reporting file against XSD and schematron
+  * Fix bad log message in cdar schematron check
+
 * version 0.20 dated 2026-09-10
 
   * Fix in get_directory_lines_parsed() for routing code directory lines when arg siren_or_siret is a SIREN

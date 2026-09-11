@@ -1080,6 +1080,7 @@ def generate_cdar(
     check_xsd=True,
     check_schematron=False,
     saxon_server_url=None,
+    saxon_server_raise_if_http_error=False,
     prefixed_namespaces=True,
 ):
     """Generate CDAR XML file for life cycle"""
@@ -1278,7 +1279,11 @@ def generate_cdar(
     if check_xsd:
         check_cdar_xsd(root)
     if check_schematron:
-        check_cdar_schematron(xml_bytes, saxon_server_url=saxon_server_url)
+        check_cdar_schematron(
+            xml_bytes,
+            saxon_server_url=saxon_server_url,
+            raise_if_http_error=saxon_server_raise_if_http_error,
+        )
     return xml_bytes
 
 
@@ -1290,7 +1295,7 @@ def _format_datetime_204(date_time):
     return date_time.strftime(CDAR_DATE_FMT["204"])
 
 
-def _check_xsd(xml_to_check, xsd_file, file_type):
+def _check_xsd(xml_to_check, xsd_file_path, file_type):
     if isinstance(xml_to_check, (bytes, str)):
         try:
             xml_etree = etree.fromstring(xml_to_check)
@@ -1304,7 +1309,9 @@ def _check_xsd(xml_to_check, xsd_file, file_type):
         raise ValueError(
             "The first argument must be a bytes, string or an XML etree object"
         )
-    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(xsd_file)
+    xsd_absolute_filepath = importlib_resources.files(__package__).joinpath(
+        xsd_file_path
+    )
     logger.debug(f"Using {file_type} XSD file {xsd_absolute_filepath}")
     official_schema = etree.XMLSchema(file=str(xsd_absolute_filepath))
     try:
@@ -1329,6 +1336,22 @@ def check_cdar_xsd(xml_to_check):
 
 
 def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=False):
+    return _check_schematron(
+        xml_bytes,
+        CDAR_XSLT_FILE,
+        "CDAR",
+        saxon_server_url=saxon_server_url,
+        raise_if_http_error=raise_if_http_error,
+    )
+
+
+def _check_schematron(
+    xml_bytes,
+    xslt_file_path,
+    file_type,
+    saxon_server_url=None,
+    raise_if_http_error=False,
+):
     if not isinstance(saxon_server_url, (type(None), str)):
         raise ValueError("saxon_server_url argument must be a string or None")
     url = saxon_server_url
@@ -1338,15 +1361,17 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
     errors = []
     xml_str = xml_bytes.decode("utf-8")
     xml_str_no_bom = xml_str.lstrip("\ufeff")
-    xslt_file_path = importlib_resources.files(__package__).joinpath(CDAR_XSLT_FILE)
-    xslt_file_str = xslt_file_path.read_text(encoding="utf-8")
+    xslt_file_full_path = importlib_resources.files(__package__).joinpath(
+        xslt_file_path
+    )
+    xslt_file_str = xslt_file_full_path.read_text(encoding="utf-8")
 
     rfiles = {
-        "xml": ("cdar_file.xml", xml_str_no_bom, "text/xml"),
-        "xsl": ("cdar_schematron.xsl", xslt_file_str, "text/xml"),
+        "xml": (f"{file_type}_file.xml", xml_str_no_bom, "text/xml"),
+        "xsl": (f"{file_type}_schematron.xsl", xslt_file_str, "text/xml"),
     }
     logger.info(
-        f"Sending HTTP POST request on {url} to validate against CDAR schematron"
+        f"Sending HTTP POST request on {url} to validate against {file_type} schematron"
     )
     try:
         res = requests.post(url, files=rfiles, timeout=SAXON_SERVER_TIMEOUT)
@@ -1355,7 +1380,7 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
         logger.warning(error_msg)
         if raise_if_http_error:
             raise RuntimeError(error_msg) from err
-        logger.warning("Skipping CDAR schematron check")
+        logger.warning(f"Skipping {file_type} schematron check")
         return
 
     if res.status_code != 200:
@@ -1366,7 +1391,7 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
         logger.warning(error_msg)
         if raise_if_http_error:
             raise RuntimeError(error_msg)
-        logger.warning("Skipping CDAR schematron check")
+        logger.warning(f"Skipping {file_type} schematron check")
         return
     logger.info("Saxon server answered successfully")
     result_str = res.text
@@ -1376,9 +1401,10 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
         svrl_root = etree.fromstring(result_str.encode("utf-8"))
     except Exception as e:
         logger.error(
-            f"Schematron check generated an invalid XML output. Error: {str(e)}"
+            f"{file_type} schematron check generated an invalid XML output. "
+            f"Error: {str(e)}"
         )
-        logger.info("Unable to validate CDAR XML file against schematron")
+        logger.info(f"Unable to validate {file_type} XML file against schematron")
         return False
     xpath_errors = svrl_root.xpath(
         ".//svrl:successful-report | .//svrl:failed-assert", namespaces=svrl_root.nsmap
@@ -1398,22 +1424,24 @@ def check_cdar_schematron(xml_bytes, saxon_server_url=None, raise_if_http_error=
             error_nr += 1
 
     if errors:
+        logger.info(f"Generated {file_type} XML file:")
+        logger.info(xml_bytes.decode("utf-8"))
         logger.error(
-            "The XML file is invalid against the schematron: %d errors found.",
-            len(errors),
+            f"The {file_type} XML file is invalid against the schematron: "
+            f"{len(errors)} errors found."
         )
         for error_msg in errors:
             logger.error(error_msg)
         error_list_str = "\n".join(errors)
         full_error = (
-            f"The Factur-X XML file is not valid against the official "
+            f"The {file_type} XML file is not valid against the official "
             f"schematron. {len(errors)} errors found:\n{error_list_str}"
         )
         raise Exception(full_error)
     end_chrono = datetime.datetime.now()
+    sec = (end_chrono - start_chrono).total_seconds()
     logger.info(
-        "CDAR XML file successfully validated against schematron in %s sec",
-        (end_chrono - start_chrono).total_seconds(),
+        f"{file_type} XML file successfully validated against schematron in {sec} sec"
     )
 
 

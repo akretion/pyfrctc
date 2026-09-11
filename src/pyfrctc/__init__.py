@@ -1,7 +1,13 @@
 import logging
 
-__version__ = "0.20"
+__version__ = "0.21"
+from .chorus_pro import (
+    CHORUS_ATTACHMENT_ALLOWED_EXTENSIONS,
+    CHORUS_ATTACHMENT_FILENAME_MAX,
+    CHORUS_ATTACHMENT_FILESIZE_MAX_MB,
+)
 from .ereporting import (
+    check_ereporting_schematron,
     check_ereporting_xsd,
     generate_ereporting_payments,
     generate_ereporting_transactions,
@@ -60,9 +66,13 @@ __all__ = [
     "generate_ereporting_transactions",
     "generate_ereporting_payments",
     "check_ereporting_xsd",
+    "check_ereporting_schematron",
     "get_ereporting_end_date_and_deadline_from_start_date",
     "get_ereporting_types_to_declare_today",
     "check_directory_line_peppol_status",
+    "CHORUS_ATTACHMENT_FILENAME_MAX",
+    "CHORUS_ATTACHMENT_FILESIZE_MAX_MB",
+    "CHORUS_ATTACHMENT_ALLOWED_EXTENSIONS",
 ]
 
 

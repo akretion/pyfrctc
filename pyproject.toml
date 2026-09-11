@@ -45,6 +45,7 @@ Issues = "https://github.com/akretion/pyfrctc/issues"
 
 [project.scripts]
 pyfrctc-peppol_dir_line_check = "pyfrctc.scripts.peppol_dir_line_check:main"
+pyfrctc-xmlcheck = "pyfrctc.scripts.xmlcheck:main"
 
 [tool.hatch.version]
 source = "vcs"

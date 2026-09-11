@@ -9,7 +9,7 @@ from calendar import monthrange
 from dateutil.relativedelta import relativedelta
 from lxml import etree, objectify
 
-from .pyfrctc import _check_xsd
+from .pyfrctc import _check_schematron, _check_xsd
 
 # VERSION = importlib.metadata.version("pyfrctc")
 logger = logging.getLogger("pyfrctc")
@@ -20,6 +20,7 @@ BT_8toCII = {
     "payment": "72",
 }
 EREPORTING_XSD_FILE = "frr-xsd/ereporting.xsd"
+EREPORTING_XSLT_FILE = "frr-schematron/Flux10.xslt"
 
 
 def _single_invoice(E, inv_dict):
@@ -289,7 +290,13 @@ def _generate_report_document(E, data_dict):
     return root
 
 
-def generate_ereporting_transactions(data_dict, check_xsd=True):
+def generate_ereporting_transactions(
+    data_dict,
+    check_xsd=True,
+    check_schematron=False,
+    saxon_server_url=None,
+    saxon_server_raise_if_http_error=False,
+):
     E = objectify.ElementMaker(annotate=False)
     root = E.Report(
         _generate_report_document(E, data_dict),
@@ -313,6 +320,12 @@ def generate_ereporting_transactions(data_dict, check_xsd=True):
     )
     if check_xsd:
         check_ereporting_xsd(root)
+    if check_schematron:
+        check_ereporting_schematron(
+            xml_bytes,
+            saxon_server_url=saxon_server_url,
+            raise_if_http_error=saxon_server_raise_if_http_error,
+        )
     return xml_bytes
 
 
@@ -365,7 +378,13 @@ def _single_payment_10_4(E, pay_dict):
     )
 
 
-def generate_ereporting_payments(data_dict, check_xsd=True):
+def generate_ereporting_payments(
+    data_dict,
+    check_xsd=True,
+    check_schematron=False,
+    saxon_server_url=None,
+    saxon_server_raise_if_http_error=False,
+):
     E = objectify.ElementMaker(annotate=False)
     root = E.Report(
         _generate_report_document(E, data_dict),
@@ -390,6 +409,12 @@ def generate_ereporting_payments(data_dict, check_xsd=True):
     )
     if check_xsd:
         check_ereporting_xsd(root)
+    if check_schematron:
+        check_ereporting_schematron(
+            xml_bytes,
+            saxon_server_url=saxon_server_url,
+            raise_if_http_error=saxon_server_raise_if_http_error,
+        )
     return xml_bytes
 
 
@@ -413,6 +438,18 @@ def check_ereporting_xsd(xml_to_check):
     # It probably explains... but they could have provided another XSD
     # for the exchanges between providers and PA...
     return _check_xsd(xml_to_check, EREPORTING_XSD_FILE, "eReporting")
+
+
+def check_ereporting_schematron(
+    xml_bytes, saxon_server_url=None, raise_if_http_error=False
+):
+    return _check_schematron(
+        xml_bytes,
+        EREPORTING_XSLT_FILE,
+        "eReporting",
+        saxon_server_url=saxon_server_url,
+        raise_if_http_error=raise_if_http_error,
+    )
 
 
 def get_ereporting_end_date_and_deadline_from_start_date(

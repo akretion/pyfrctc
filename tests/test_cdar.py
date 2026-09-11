@@ -55,5 +55,8 @@ class TestGenerateEreporting(unittest.TestCase):
 
     def test_generate_dispute_cdar(self):
         cdar_dict = self._prepare_dispute_cdar_dict()
-        xml_bytes = generate_cdar(cdar_dict)
-        _cdar_dict_parsed = parse_cdar(xml_bytes)
+        for prefixed_namespaces in (True, False):
+            xml_bytes = generate_cdar(
+                cdar_dict, prefixed_namespaces=prefixed_namespaces
+            )
+            _cdar_dict_parsed = parse_cdar(xml_bytes)
