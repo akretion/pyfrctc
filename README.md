@@ -16,6 +16,10 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.23 dated 2026-09-29
+
+  * Update e-reporting XML generation code to new structure of invoice dict used in factur-x 7.0
+
 * version 0.22 dated 2026-09-11
 
   * Handle entities not in directory for get_directory_siret_parsed() and get_directory_siret()

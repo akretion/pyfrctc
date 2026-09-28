@@ -66,37 +66,50 @@ def _single_invoice(E, inv_dict):
             if previnv.get("BT-25")
         ],
         E.Seller(
-            E.CompanyId(inv_dict["BT-30"], schemeId=inv_dict["BT-30-1"]),
-            *[E.TaxRegistrationId(inv_dict["BT-31"], qualifyingId="VAT")],
+            E.CompanyId(
+                inv_dict["BG-4"]["legal_identifier"],
+                schemeId=inv_dict["BG-4"]["legal_identifier_schemeid"],
+            ),
             *[
-                E.PostalAddress(E.CountryId(inv_dict["BT-40"]))
+                E.TaxRegistrationId(
+                    inv_dict["BG-4"]["vat_identifier"], qualifyingId="VAT"
+                )
+            ],
+            *[
+                E.PostalAddress(E.CountryId(inv_dict["BG-4"]["country_code"]))
                 for _ in [1]
-                if inv_dict.get("BT-40")
+                if inv_dict["BG-4"].get("country_code")
             ],
         ),
         E.Buyer(
             *[
-                E.CompanyId(inv_dict["BT-47"], schemeId=inv_dict["BT-47-1"])
+                E.CompanyId(
+                    inv_dict["BG-7"]["legal_identifier"],
+                    schemeId=inv_dict["BG-7"]["legal_identifier_schemeid"],
+                )
                 for _ in [1]
-                if inv_dict.get("BT-47") and inv_dict.get("BT-47-1")
+                if inv_dict["BG-7"].get("legal_identifier")
+                and inv_dict["BG-7"].get("legal_identifier_schemeid")
             ],
             *[
-                E.TaxRegistrationId(inv_dict["BT-48"], qualifyingId="VAT")
+                E.TaxRegistrationId(
+                    inv_dict["BG-7"]["vat_identifier"], qualifyingId="VAT"
+                )
                 for _ in [1]
-                if inv_dict.get("BT-48")
+                if inv_dict["BG-7"].get("vat_identifier")
             ],
             *[
-                E.PostalAddress(E.CountryId(inv_dict["BT-55"]))
+                E.PostalAddress(E.CountryId(inv_dict["BG-7"]["country_code"]))
                 for _ in [1]
-                if inv_dict.get("BT-55")
+                if inv_dict["BG-7"].get("country_code")
             ],
         ),
         *[
             E.SellerTaxRepresentative(
-                E.TaxRegistrationId(inv_dict["BT-63"], schemeId="VAT")
+                E.TaxRegistrationId(inv_dict["BG-12"]["vat_identifier"], schemeId="VAT")
             )
             for _ in [1]
-            if inv_dict.get("BT-63")
+            if inv_dict.get("BG-12", {}).get("vat_identifier")
         ],
         *[
             E.Delivery(
@@ -108,43 +121,43 @@ def _single_invoice(E, inv_dict):
                 *[
                     E.Location(
                         *[
-                            E.LineOne(inv_dict["BT-75"])
+                            E.LineOne(inv_dict["BG-13"]["addr_l1"])
                             for _ in [1]
-                            if inv_dict.get("BT-75")
+                            if inv_dict.get("BG-13", {}).get("addr_l1")
                         ],
                         *[
-                            E.LineTwo(inv_dict["BT-76"])
+                            E.LineTwo(inv_dict["BG-13"]["addr_l2"])
                             for _ in [1]
-                            if inv_dict.get("BT-76")
+                            if inv_dict.get("BG-13", {}).get("addr_l2")
                         ],
                         *[
-                            E.LineThree(inv_dict["BT-165"])
+                            E.LineThree(inv_dict["BG-13"]["addr_l3"])
                             for _ in [1]
-                            if inv_dict.get("BT-165")
+                            if inv_dict.get("BG-13", {}).get("addr_l3")
                         ],
                         *[
-                            E.CityName(inv_dict["BT-77"])
+                            E.CityName(inv_dict["BG-13"]["city"])
                             for _ in [1]
-                            if inv_dict.get("BT-77")
+                            if inv_dict.get("BG-13", {}).get("city")
                         ],
                         *[
-                            E.PostalZone(inv_dict["BT-78"])
+                            E.PostalZone(inv_dict["BG-13"]["postcode"])
                             for _ in [1]
-                            if inv_dict.get("BT-78")
+                            if inv_dict.get("BG-13", {}).get("postcode")
                         ],
                         *[
-                            E.CountrySubentity(inv_dict["BT-79"])
+                            E.CountrySubentity(inv_dict["BG-13"]["country_subdivision"])
                             for _ in [1]
-                            if inv_dict.get("BT-79")
+                            if inv_dict.get("BG-13", {}).get("country_subdivision")
                         ],
-                        E.CountryId(inv_dict["BT-80"]),
+                        E.CountryId(inv_dict["BG-13"]["country_code"]),
                     )
                     for _ in [1]
-                    if inv_dict.get("BT-80")
+                    if inv_dict.get("BG-13", {}).get("country_code")
                 ],
             )
             for _ in [1]
-            if inv_dict.get("BT-72") or inv_dict.get("BT-80")
+            if inv_dict.get("BT-72") or inv_dict.get("BG-13")
         ],
         *[
             E.InvoicePeriod(
