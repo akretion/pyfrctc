@@ -178,14 +178,18 @@ def _single_invoice(E, inv_dict):
         *[
             E.AllowanceCharge(
                 E.Amount(
-                    charge["BT-92"]
+                    charge["amount"]
                 ),  # it is required in EN16931, so it is here too
                 *[
-                    E.TaxCategoryCode(charge["BT-95"])
+                    E.TaxCategoryCode(charge["vat_category_code"])
                     for _ in [1]
-                    if charge.get("BT-95")
+                    if charge.get("vat_category_code")
                 ],
-                *[E.TaxPercent(charge["BT-96"]) for _ in [1] if charge.get("BT-96")],
+                *[
+                    E.TaxPercent(charge["vat_rate"])
+                    for _ in [1]
+                    if charge.get("vat_rate")
+                ],
                 ChargeIndicator="false",
             )
             for charge in (inv_dict.get("BG-20") or [])
@@ -193,14 +197,18 @@ def _single_invoice(E, inv_dict):
         *[
             E.AllowanceCharge(
                 E.Amount(
-                    charge["BT-99"]
+                    charge["amount"]
                 ),  # it is required in EN16931, so it is here too
                 *[
-                    E.TaxCategoryCode(charge["BT-102"])
+                    E.TaxCategoryCode(charge["vat_category_code"])
                     for _ in [1]
-                    if charge.get("BT-102")
+                    if charge.get("vat_category_code")
                 ],
-                *[E.TaxPercent(charge["BT-103"]) for _ in [1] if charge.get("BT-103")],
+                *[
+                    E.TaxPercent(charge["vat_rate"])
+                    for _ in [1]
+                    if charge.get("vat_rate")
+                ],
                 ChargeIndicator="true",
             )
             for charge in (inv_dict.get("BG-21") or [])

@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.23"
+__version__ = "0.24"
 from .chorus_pro import (
     CHORUS_ATTACHMENT_ALLOWED_EXTENSIONS,
     CHORUS_ATTACHMENT_FILENAME_MAX,
