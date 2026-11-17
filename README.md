@@ -16,6 +16,12 @@ This library is published under the [GNU Lesser General Public License v2.1](htt
 
 ## Changelog
 
+* version 0.25 dated 2026-11-17
+
+  * Implement stupid AIFE decision: datetime strings must be in Paris timezone (the good decision would have been to consider it in UTC timezone !). For all the methods that start with **parse_cdar**, the datetime values returned are in datetime naive in UTC timezone (pyfrctc converts the values in the XML that are in Paris timezone to UTC). For the methods **generate_ereporting_payments()**, **generate_ereporting_transactions()** and **generate_cdar()**:
+    - if the datetime fields are with timezone information, they are converted to Paris timezone and written in the XML.
+    - if the datetime fields don't have timezone information, we consider they are in UTC: they are converted to Paris timezone and written in the XML.
+
 * version 0.24 dated 2026-10-14
 
   * Update e-reporting XML generation code to new structure of invoice dict used in factur-x 7.5

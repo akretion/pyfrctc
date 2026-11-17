@@ -5,6 +5,7 @@
 import datetime
 import logging
 from calendar import monthrange
+from zoneinfo import ZoneInfo
 
 from dateutil.relativedelta import relativedelta
 from lxml import etree, objectify
@@ -442,7 +443,13 @@ def generate_ereporting_payments(
 def _format_datetime(date_time):
     if not date_time:
         raise ValueError("Missing datetime")
-    return date_time.strftime("%Y%m%d%H%M%S")
+    # Stupid decision by AIFE: datetime fields should be expressed in Paris tz
+    # if we don't have tzinfo in the input date_time, we consider the input to be UTC
+    if not date_time.tzinfo:
+        date_time = date_time.replace(tzinfo=datetime.UTC)
+    paris_tz = ZoneInfo("Europe/Paris")
+    date_time_paris = date_time.astimezone(paris_tz)
+    return date_time_paris.strftime("%Y%m%d%H%M%S")
 
 
 def _format_date(date):

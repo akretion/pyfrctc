@@ -13,6 +13,7 @@ import secrets
 import time
 from io import BytesIO
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import pytz
 import requests
@@ -1304,7 +1305,13 @@ def _format_date_102(date):
 
 
 def _format_datetime_204(date_time):
-    return date_time.strftime(CDAR_DATE_FMT["204"])
+    # Stupid decision by AIFE: datetime fields should be expressed in Paris tz
+    # if we don't have tzinfo in the input date_time, we consider the input to be UTC
+    if not date_time.tzinfo:
+        date_time = date_time.replace(tzinfo=datetime.UTC)
+    paris_tz = ZoneInfo("Europe/Paris")
+    date_time_paris = date_time.astimezone(paris_tz)
+    return date_time_paris.strftime(CDAR_DATE_FMT["204"])
 
 
 def _check_xsd(xml_to_check, xsd_file_path, file_type):
@@ -1550,6 +1557,7 @@ def parse_cdar_raw(
 
 
 def _xpath_get_value(xpath, node, namespaces):
+    paris_tz = ZoneInfo("Europe/Paris")
     xpath_res = node.xpath(xpath, namespaces=namespaces)
     values = []
     for xpath_entry in xpath_res:
@@ -1564,6 +1572,13 @@ def _xpath_get_value(xpath, node, namespaces):
                 value = datetime.datetime.strptime(
                     value, CDAR_DATE_FMT[xpath_entry.attrib["format"]]
                 )
+                if xpath_entry.attrib["format"] == "204":
+                    # Stupid decision of AIFE: datetime strings are
+                    # considered in Paris timezone
+                    # pyfrctc return it as a datetime naive in UTC
+                    value_aware_paris = value.replace(tzinfo=paris_tz)
+                    value_aware_utc = value_aware_paris.astimezone(datetime.UTC)
+                    value = value_aware_utc.replace(tzinfo=None)
             elif value and xpath_entry.attrib and xpath_entry.attrib.get("currencyID"):
                 value = {
                     "float": float(value),
