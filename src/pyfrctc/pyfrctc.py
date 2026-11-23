@@ -1308,7 +1308,7 @@ def _format_datetime_204(date_time):
     # Stupid decision by AIFE: datetime fields should be expressed in Paris tz
     # if we don't have tzinfo in the input date_time, we consider the input to be UTC
     if not date_time.tzinfo:
-        date_time = date_time.replace(tzinfo=datetime.UTC)
+        date_time = date_time.replace(tzinfo=datetime.timezone.utc)
     paris_tz = ZoneInfo("Europe/Paris")
     date_time_paris = date_time.astimezone(paris_tz)
     return date_time_paris.strftime(CDAR_DATE_FMT["204"])
@@ -1577,7 +1577,9 @@ def _xpath_get_value(xpath, node, namespaces):
                     # considered in Paris timezone
                     # pyfrctc return it as a datetime naive in UTC
                     value_aware_paris = value.replace(tzinfo=paris_tz)
-                    value_aware_utc = value_aware_paris.astimezone(datetime.UTC)
+                    value_aware_utc = value_aware_paris.astimezone(
+                        datetime.timezone.utc
+                    )
                     value = value_aware_utc.replace(tzinfo=None)
             elif value and xpath_entry.attrib and xpath_entry.attrib.get("currencyID"):
                 value = {

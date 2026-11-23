@@ -446,7 +446,7 @@ def _format_datetime(date_time):
     # Stupid decision by AIFE: datetime fields should be expressed in Paris tz
     # if we don't have tzinfo in the input date_time, we consider the input to be UTC
     if not date_time.tzinfo:
-        date_time = date_time.replace(tzinfo=datetime.UTC)
+        date_time = date_time.replace(tzinfo=datetime.timezone.utc)
     paris_tz = ZoneInfo("Europe/Paris")
     date_time_paris = date_time.astimezone(paris_tz)
     return date_time_paris.strftime("%Y%m%d%H%M%S")
@@ -546,7 +546,7 @@ def get_ereporting_types_to_declare_today(
     if not today:
         # If today is not given as arg, we fallback to today in UTC timezone
         # If you don't want that, give the current day in your timezone
-        today = datetime.datetime.now(datetime.UTC).date()
+        today = datetime.datetime.now(datetime.timezone.utc).date()
     if not isinstance(today, datetime.date):
         raise ValueError("The today arg must be a python date object.")
     res = {}  # key = type, value = start_date
